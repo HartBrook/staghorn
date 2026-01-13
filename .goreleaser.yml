@@ -1,0 +1,67 @@
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+    - go test ./...
+
+builds:
+  - id: staghorn
+    main: ./cmd/staghorn
+    binary: staghorn
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/HartBrook/staghorn/internal/cli.Version={{.Version}}
+
+archives:
+  - id: staghorn
+    builds:
+      - staghorn
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format: tar.gz
+    files:
+      - README.md
+      - LICENSE*
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+      - "^chore:"
+
+release:
+  github:
+    owner: HartBrook
+    name: staghorn
+  draft: false
+  prerelease: auto
+
+brews:
+  - name: staghorn
+    repository:
+      owner: HartBrook
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/HartBrook/staghorn"
+    description: "A shared team layer for Claude Code - syncs team CLAUDE.md guidelines from GitHub"
+    license: "MIT"
+    install: |
+      bin.install "staghorn"
+      bin.install_symlink "staghorn" => "stag"
+    test: |
+      system "#{bin}/staghorn", "--version"
