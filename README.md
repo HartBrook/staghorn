@@ -53,6 +53,7 @@ You never need to edit the output files directly - Staghorn manages them.
 | `stag actions`      | List actions or show info for a specific action |
 | `stag run <action>` | Run an action (outputs prompt to stdout)        |
 | `stag project`      | Manage project-level config (see below)         |
+| `stag version`      | Print version number                            |
 
 ### Typical Workflow
 
@@ -70,12 +71,28 @@ stag edit
 ### Power User Flags
 
 ```bash
+# Sync options
 stag sync --fetch-only     # Fetch without applying
 stag sync --apply-only     # Apply cached config without fetching
 stag sync --force          # Re-fetch even if cache is fresh
+stag sync --offline        # Use cached config only (no network)
+stag sync --config-only    # Sync config only, skip actions/languages
+stag sync --actions-only   # Sync actions only
+stag sync --languages-only # Sync language configs only
+
+# Edit options
 stag edit --no-apply       # Edit without auto-applying
+
+# Info options
 stag info --content        # Show full merged config
-stag info --layer team     # Show only team config
+stag info --layer team     # Show only team config (also: personal, project)
+stag info --sources        # Annotate output with source information
+stag info --languages auto # Control language inclusion (auto, none, or comma-separated list)
+
+# Action filtering
+stag actions --tag security   # Filter actions by tag
+stag actions --source team    # Filter by source (team, personal, project)
+stag run <action> --dry-run   # Preview action without rendering
 ```
 
 ## Adding Personal Preferences
@@ -87,7 +104,9 @@ Your personal additions layer on top of team guidelines:
 stag edit
 ```
 
-This opens `~/.config/staghorn/personal.md`. Add whatever you like:
+This opens `~/.config/staghorn/personal.md` in your editor. Staghorn looks for editors in this order: `$EDITOR`, `$VISUAL`, then falls back to `code`, `vim`, `nano`, or `vi`.
+
+Add whatever you like:
 
 ```markdown
 ## My Preferences
@@ -240,6 +259,8 @@ Staghorn can detect these languages automatically:
 | C#         | `*.csproj`, `*.sln`                             |
 | Swift      | `Package.swift`                                 |
 | Kotlin     | `build.gradle.kts`                              |
+
+> **Note:** When both TypeScript and JavaScript are detected, TypeScript takes precedence and JavaScript config is not applied. This avoids duplicate guidelines since TypeScript projects typically include `package.json`.
 
 ### Team Repository Structure
 
@@ -430,6 +451,51 @@ Staghorn automatically uses your `gh` credentials.
 export STAGHORN_GITHUB_TOKEN=ghp_xxxxxxxxxxxx
 ```
 
+## Advanced
+
+### Configuration File
+
+The main configuration lives at `~/.config/staghorn/config.yaml`:
+
+```yaml
+version: 1
+team:
+  repo: "your-org/claude-standards"  # Required: GitHub repo (owner/repo or full URL)
+  branch: "main"                      # Optional: defaults to repo's default branch
+  path: "CLAUDE.md"                   # Optional: path to config file in repo
+cache:
+  ttl: "24h"                          # Optional: how long to cache before re-fetching
+languages:
+  auto_detect: true                   # Default behavior
+  enabled: []                         # Explicit list (overrides auto-detect)
+  disabled: []                        # Languages to exclude
+```
+
+### Migrating Existing Config
+
+If you already have a `~/.claude/CLAUDE.md` that wasn't created by staghorn, the first `stag sync` will detect it and offer three options:
+
+1. **Migrate** — Move your existing content to `~/.config/staghorn/personal.md` so it layers on top of team config
+2. **Backup** — Save a copy to `~/.claude/CLAUDE.md.backup` before overwriting
+3. **Abort** — Cancel and leave everything unchanged
+
+This ensures you don't lose any custom configuration you've already created.
+
+### Instructional Comments
+
+Team admins can add comments that appear in source files but are stripped from the final output. Use HTML comments with the `[staghorn]` prefix:
+
+```markdown
+## Code Review Guidelines
+
+<!-- [staghorn] Tip: Customize this section in your personal.md -->
+
+- All PRs require one approval
+- Keep PRs under 400 lines
+```
+
+The comment won't appear in `~/.claude/CLAUDE.md` — useful for adding hints or documentation for teammates editing the config.
+
 ## File Locations
 
 | File                              | Purpose                                         |
@@ -444,6 +510,32 @@ export STAGHORN_GITHUB_TOKEN=ghp_xxxxxxxxxxxx
 | `.staghorn/actions/`              | Project-specific actions                        |
 | `.staghorn/languages/`            | Project-specific language configs               |
 | `./CLAUDE.md`                     | **Output** — project config managed by staghorn |
+
+## Troubleshooting
+
+**"No editor found"**
+Set the `$EDITOR` environment variable in your shell config:
+```bash
+export EDITOR="code --wait"  # VS Code
+export EDITOR="vim"          # Vim
+```
+
+**"Could not authenticate with GitHub"**
+Staghorn needs GitHub access. Either:
+- Install and authenticate with `gh auth login` (recommended)
+- Set `STAGHORN_GITHUB_TOKEN` environment variable
+
+**"Cache is stale" warnings**
+Run `stag sync --force` to re-fetch from GitHub regardless of cache age.
+
+**Config not updating after edit**
+Make sure you saved the file. If using `--no-apply`, run `stag sync --apply-only` to apply changes.
+
+**Languages not being detected**
+Check `stag languages` to see detection status. Ensure marker files (like `go.mod`, `pyproject.toml`) exist in your project root. You can also explicitly enable languages in `config.yaml`.
+
+**Action not found**
+Run `stag actions` to see all available actions and their sources. Remember that project actions override personal, which override team.
 
 ## License
 
