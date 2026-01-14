@@ -320,9 +320,7 @@ func generateProjectOutput(paths *config.ProjectPaths) error {
 
 	// Set modification time to now to ensure it's newer than source
 	now := time.Now()
-	if err := os.Chtimes(paths.OutputMD, now, now); err != nil {
-		// Non-fatal, just continue
-	}
+	_ = os.Chtimes(paths.OutputMD, now, now) // Non-fatal if this fails
 
 	return nil
 }

@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 // Language represents a supported programming language.
@@ -111,7 +114,7 @@ func GetDisplayName(id string) string {
 	if lang := GetLanguage(id); lang != nil {
 		return lang.DisplayName
 	}
-	return strings.Title(id)
+	return cases.Title(language.English).String(id)
 }
 
 // filterDisabled removes disabled languages from the list.

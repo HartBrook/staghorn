@@ -156,9 +156,9 @@ func TestRender(t *testing.T) {
 			want:  "Target: .",
 		},
 		{
-			name: "unrecognized variable left as-is",
-			body: "Hello {{unknown}}!",
-			args: []Arg{},
+			name:  "unrecognized variable left as-is",
+			body:  "Hello {{unknown}}!",
+			args:  []Arg{},
 			input: map[string]string{},
 			want:  "Hello {{unknown}}!",
 		},
