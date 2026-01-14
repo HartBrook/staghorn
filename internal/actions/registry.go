@@ -8,7 +8,7 @@ import (
 // Registry manages actions from multiple sources with precedence handling.
 // Precedence (highest to lowest): project > personal > team
 type Registry struct {
-	actions map[string]*Action // name -> action (highest precedence wins)
+	actions  map[string]*Action // name -> action (highest precedence wins)
 	bySource map[Source][]*Action
 }
 

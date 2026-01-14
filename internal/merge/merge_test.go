@@ -7,11 +7,11 @@ import (
 
 func TestParse(t *testing.T) {
 	tests := []struct {
-		name           string
-		content        string
-		wantPreamble   string
-		wantSections   int
-		wantHeaders    []string
+		name         string
+		content      string
+		wantPreamble string
+		wantSections int
+		wantHeaders  []string
 	}{
 		{
 			name:         "empty document",

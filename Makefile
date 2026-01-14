@@ -1,4 +1,4 @@
-.PHONY: build install install-alias clean test test-verbose test-cover lint fmt vet check run help
+.PHONY: build install install-alias clean test test-verbose test-cover test-race lint fmt vet check ci run help
 
 # Build variables
 BINARY_NAME := staghorn
@@ -50,9 +50,14 @@ test-cover-html:
 	go tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report: coverage.html"
 
-# Run linter (requires golangci-lint)
+# Run tests with race detection and coverage (same as CI)
+test-race:
+	go test -race -coverprofile=coverage.out ./...
+
+# Run linter (installs golangci-lint if missing)
 lint:
-	golangci-lint run
+	@which golangci-lint > /dev/null || (echo "Installing golangci-lint..." && go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest)
+	$(GOBIN)/golangci-lint run
 
 # Format code
 fmt:
@@ -64,6 +69,19 @@ vet:
 
 # Run all checks (fmt, vet, lint, test)
 check: fmt vet lint test
+
+# Run all CI steps locally (mirrors GitHub Actions workflow)
+ci: fmt vet
+	@echo "==> Running tests with race detection..."
+	go test -race -coverprofile=coverage.out ./...
+	@echo "==> Running linter..."
+	@which golangci-lint > /dev/null || (echo "Installing golangci-lint..." && go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest)
+	$(GOBIN)/golangci-lint run --timeout=5m
+	@echo "==> Building binary..."
+	go build -v ./cmd/staghorn
+	@echo "==> Verifying binary runs..."
+	./$(BINARY_NAME) version
+	@echo "==> CI passed!"
 
 # Run the binary (builds first if needed)
 run: build
@@ -80,9 +98,11 @@ help:
 	@echo "  test-verbose   Run tests with verbose output"
 	@echo "  test-cover     Run tests with coverage"
 	@echo "  test-cover-html Generate HTML coverage report"
+	@echo "  test-race      Run tests with race detection (same as CI)"
 	@echo "  lint           Run golangci-lint"
 	@echo "  fmt            Format code"
 	@echo "  vet            Run go vet"
 	@echo "  check          Run all checks (fmt, vet, lint, test)"
+	@echo "  ci             Run all CI steps locally"
 	@echo "  run            Build and run the binary"
 	@echo "  help           Show this help"

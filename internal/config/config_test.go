@@ -274,12 +274,12 @@ func TestLoadNotFound(t *testing.T) {
 
 func TestTTLDuration(t *testing.T) {
 	tests := []struct {
-		ttl      string
-		wantHrs  int
+		ttl     string
+		wantHrs int
 	}{
 		{"24h", 24},
 		{"1h", 1},
-		{"168h", 168}, // 1 week
+		{"168h", 168},   // 1 week
 		{"invalid", 24}, // Falls back to default
 		{"", 24},        // Falls back to default
 	}

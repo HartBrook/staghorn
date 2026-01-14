@@ -17,9 +17,9 @@ type Layer struct {
 
 // MergeOptions controls merge behavior.
 type MergeOptions struct {
-	AnnotateSources bool                              // Add source comments
-	TeamRepo        string                            // For header annotation (e.g., "acme/standards")
-	Languages       []string                          // Active languages to include
+	AnnotateSources bool                                // Add source comments
+	TeamRepo        string                              // For header annotation (e.g., "acme/standards")
+	Languages       []string                            // Active languages to include
 	LanguageFiles   map[string][]*language.LanguageFile // Language files by language ID
 }
 
