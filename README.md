@@ -43,17 +43,20 @@ You never need to edit the output files directly - Staghorn manages them.
 
 ## Commands
 
-| Command             | Description                                     |
-| ------------------- | ----------------------------------------------- |
-| `stag init`         | Set up staghorn (team repo, authentication)     |
-| `stag sync`         | Fetch and apply team config from GitHub         |
-| `stag edit`         | Edit personal config (auto-applies on save)     |
-| `stag info`         | Show current config state                       |
-| `stag languages`    | Show detected and configured languages          |
-| `stag actions`      | List actions or show info for a specific action |
-| `stag run <action>` | Run an action (outputs prompt to stdout)        |
-| `stag project`      | Manage project-level config (see below)         |
-| `stag version`      | Print version number                            |
+| Command              | Description                                        |
+| -------------------- | -------------------------------------------------- |
+| `stag init`          | Set up staghorn (team repo, authentication)        |
+| `stag sync`          | Fetch and apply team config from GitHub            |
+| `stag edit`          | Edit personal config (auto-applies on save)        |
+| `stag edit -l <lang>`| Edit personal language config (e.g., `-l python`)  |
+| `stag info`          | Show current config state                          |
+| `stag languages`     | Show detected and configured languages             |
+| `stag languages init`| Install starter language configs                   |
+| `stag actions`       | List actions or show info for a specific action    |
+| `stag actions init`  | Install starter actions (code-review, debug, etc.) |
+| `stag run <action>`  | Run an action (outputs prompt to stdout)           |
+| `stag project`       | Manage project-level config (see below)            |
+| `stag version`       | Print version number                               |
 
 ### Typical Workflow
 
@@ -116,42 +119,62 @@ Add whatever you like:
 - Explain your reasoning before showing code
 ```
 
+### Personal Language Preferences
+
+You can also set personal preferences for specific languages. These only apply when that language is detected in a project:
+
+```bash
+# Edit personal config for a specific language
+stag edit --language python
+stag edit --language go
+stag edit --language typescript
+
+# Or using short form
+stag edit -l rust
+```
+
+This creates/edits `~/.config/staghorn/languages/<lang>.md`. Example personal Python preferences:
+
+```markdown
+## My Python Preferences
+
+- I use uv for dependency management
+- Prefer dataclasses over plain dicts for structured data
+- Use match statements over if/elif chains when possible
+```
+
+You can also bootstrap starter language configs for the most common languages:
+
+```bash
+# Install starter language configs to personal directory
+stag languages init
+
+# Install to project directory instead
+stag languages init --project
+```
+
 ## Language-Specific Config
 
 Staghorn supports separate configuration files for each programming language, in addition to the shared config that applies to all projects.
 
-### Shared vs Language-Specific
+### Global vs Project Language Handling
 
-Your main config files (`CLAUDE.md`, `personal.md`, `project.md`) are **shared** — they apply to every project regardless of language. Language-specific configs add guidelines that only apply when that language is detected:
+Language configs behave differently for global and project-level configs:
+
+- **Global (`~/.claude/CLAUDE.md`)**: Includes **all available** language configs from team + personal. Since this file is used across all projects, it makes sense to have all your team's language guidelines available.
+
+- **Project (`./CLAUDE.md`)**: Uses **auto-detection** based on marker files in the project (e.g., `go.mod`, `pyproject.toml`). Only relevant languages are included.
 
 ```
-Shared config (always applied)
+Global config (all languages included)
 ├── Team CLAUDE.md
 ├── Personal personal.md
-└── Project project.md
+└── All team + personal language configs
 
-Language configs (appended when language is active)
-├── python.md   ← only if Python detected
-├── go.md       ← only if Go detected
-└── etc.
-```
-
-```mermaid
-flowchart TB
-    subgraph shared["Shared Config (always applied)"]
-        T1[Team CLAUDE.md] --> M[Merged Output]
-        P1[Personal personal.md] --> M
-        PR1[Project project.md] --> M
-    end
-
-    subgraph lang["Language Configs (when detected)"]
-        T2[Team languages/*.md] --> L[Language Section]
-        P2[Personal languages/*.md] --> L
-        PR2[Project languages/*.md] --> L
-    end
-
-    M --> OUT["~/.claude/CLAUDE.md"]
-    L --> OUT
+Project config (auto-detected languages only)
+├── Project project.md
+└── python.md   ← only if pyproject.toml exists
+└── go.md       ← only if go.mod exists
 ```
 
 This lets you keep general guidelines (code review process, commit style, etc.) separate from language-specific rules (use pytest, prefer f-strings, etc.).
@@ -189,25 +212,22 @@ Active Languages
 
 ### Configuration Options
 
-By default, staghorn auto-detects languages from marker files (e.g., `go.mod`, `pyproject.toml`, `package.json`). You can customize this in `~/.config/staghorn/config.yaml`:
+By default, the global config includes all available language configs. You can customize this in `~/.config/staghorn/config.yaml`:
 
 ```yaml
-# Auto-detect (default)
-languages:
-  auto_detect: true
-
-# Explicit list (overrides auto-detect)
+# Explicit list (only include these languages)
 languages:
   enabled:
     - python
     - go
 
-# Disable specific languages
+# Disable specific languages (exclude from "all available")
 languages:
-  auto_detect: true
   disabled:
     - javascript
 ```
+
+The `auto_detect` setting only affects project-level configs (where it defaults to `true`).
 
 ### Creating Language Configs
 
@@ -343,6 +363,30 @@ Actions can come from three sources (highest precedence first):
 1. **Project** — `.staghorn/actions/` in your repo
 2. **Personal** — `~/.config/staghorn/actions/`
 3. **Team** — `actions/` directory in team repo
+
+### Starter Actions
+
+Staghorn includes 10 starter actions that you can install during `stag init` or anytime with:
+
+```bash
+stag actions init              # Install to ~/.config/staghorn/actions/
+stag actions init --project    # Install to .staghorn/actions/
+```
+
+These actions are ready to use out of the box:
+
+| Action | Description | Example |
+|--------|-------------|---------|
+| `code-review` | Thorough code review with checklist | `stag run code-review --focus=security` |
+| `security-audit` | Scan for vulnerabilities | `stag run security-audit --severity=high` |
+| `pr-prep` | Prepare PR description | `stag run pr-prep --base=main` |
+| `explain` | Explain code in plain English | `stag run explain --path=src/auth.go` |
+| `refactor` | Suggest refactoring improvements | `stag run refactor --goal=testability` |
+| `test-gen` | Generate unit tests | `stag run test-gen --path=utils.py` |
+| `debug` | Help diagnose a bug | `stag run debug --symptom="login fails"` |
+| `doc-gen` | Generate documentation | `stag run doc-gen --path=api/ --style=markdown` |
+| `migrate` | Help migrate code | `stag run migrate --from=v1 --to=v2` |
+| `api-design` | Design API interfaces | `stag run api-design --resource=users` |
 
 ### Creating Actions
 

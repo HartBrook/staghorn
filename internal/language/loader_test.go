@@ -6,6 +6,79 @@ import (
 	"testing"
 )
 
+func TestHasUserContent(t *testing.T) {
+	tests := []struct {
+		name     string
+		content  string
+		expected bool
+	}{
+		{
+			name:     "empty string",
+			content:  "",
+			expected: false,
+		},
+		{
+			name:     "only whitespace",
+			content:  "   \n\n\t  ",
+			expected: false,
+		},
+		{
+			name:     "only heading",
+			content:  "## My Python Preferences\n\n",
+			expected: false,
+		},
+		{
+			name:     "multiple headings only",
+			content:  "# Title\n\n## Section 1\n\n### Subsection\n",
+			expected: false,
+		},
+		{
+			name:     "only HTML comment",
+			content:  "<!-- This is a comment -->",
+			expected: false,
+		},
+		{
+			name:     "only staghorn comment",
+			content:  "<!-- [staghorn] Personal Python preferences -->",
+			expected: false,
+		},
+		{
+			name:     "heading and comment only",
+			content:  "<!-- [staghorn] marker -->\n## My Python Preferences\n\n",
+			expected: false,
+		},
+		{
+			name:     "has actual content",
+			content:  "## My Preferences\n\n- Use pytest\n",
+			expected: true,
+		},
+		{
+			name:     "content with comment and heading",
+			content:  "<!-- comment -->\n## Heading\n\nSome actual content here",
+			expected: true,
+		},
+		{
+			name:     "just text",
+			content:  "I prefer using dataclasses",
+			expected: true,
+		},
+		{
+			name:     "bullet list",
+			content:  "## Prefs\n\n- item 1\n- item 2\n",
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := HasUserContent(tt.content)
+			if got != tt.expected {
+				t.Errorf("HasUserContent(%q) = %v, expected %v", tt.content, got, tt.expected)
+			}
+		})
+	}
+}
+
 func TestLoadLanguageFiles(t *testing.T) {
 	// Create temp directories for each layer
 	tmpDir := t.TempDir()
@@ -23,11 +96,11 @@ func TestLoadLanguageFiles(t *testing.T) {
 		t.Fatalf("failed to create project dir: %v", err)
 	}
 
-	// Create language files
+	// Create language files (personal needs actual content to be included)
 	if err := os.WriteFile(filepath.Join(teamDir, "python.md"), []byte("Team Python config"), 0644); err != nil {
 		t.Fatalf("failed to write team python.md: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(personalDir, "python.md"), []byte("Personal Python config"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(personalDir, "python.md"), []byte("## My Prefs\n\nPersonal Python config"), 0644); err != nil {
 		t.Fatalf("failed to write personal python.md: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(teamDir, "go.md"), []byte("Team Go config"), 0644); err != nil {
@@ -73,6 +146,42 @@ func TestLoadLanguageFiles(t *testing.T) {
 	rustFiles, ok := files["rust"]
 	if ok && len(rustFiles) > 0 {
 		t.Errorf("LoadLanguageFiles() rust files = %v, expected none", rustFiles)
+	}
+}
+
+func TestLoadLanguageFiles_SkipsEmptyPersonalFiles(t *testing.T) {
+	tmpDir := t.TempDir()
+	teamDir := filepath.Join(tmpDir, "team")
+	personalDir := filepath.Join(tmpDir, "personal")
+
+	if err := os.MkdirAll(teamDir, 0755); err != nil {
+		t.Fatalf("failed to create team dir: %v", err)
+	}
+	if err := os.MkdirAll(personalDir, 0755); err != nil {
+		t.Fatalf("failed to create personal dir: %v", err)
+	}
+
+	// Team file with content
+	if err := os.WriteFile(filepath.Join(teamDir, "python.md"), []byte("Team Python config"), 0644); err != nil {
+		t.Fatalf("failed to write team python.md: %v", err)
+	}
+
+	// Personal file with only heading (should be skipped)
+	if err := os.WriteFile(filepath.Join(personalDir, "python.md"), []byte("## My Python Preferences\n\n"), 0644); err != nil {
+		t.Fatalf("failed to write personal python.md: %v", err)
+	}
+
+	files, err := LoadLanguageFiles([]string{"python"}, teamDir, personalDir, "")
+	if err != nil {
+		t.Fatalf("LoadLanguageFiles() error = %v", err)
+	}
+
+	pythonFiles := files["python"]
+	if len(pythonFiles) != 1 {
+		t.Errorf("LoadLanguageFiles() should skip empty personal file, got %d files", len(pythonFiles))
+	}
+	if len(pythonFiles) == 1 && pythonFiles[0].Source != "team" {
+		t.Errorf("LoadLanguageFiles() expected team file only, got %q", pythonFiles[0].Source)
 	}
 }
 

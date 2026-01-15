@@ -10,9 +10,16 @@ This directory shows what a team's shared Claude Code standards repository shoul
 team-repo/
 ├── CLAUDE.md              # Shared guidelines (required)
 ├── actions/               # Reusable prompts
-│   ├── security-audit.md
-│   ├── code-review.md
-│   └── pr-prep.md
+│   ├── api-design.md      # Design API interfaces
+│   ├── code-review.md     # Thorough code review
+│   ├── debug.md           # Bug investigation helper
+│   ├── doc-gen.md         # Generate documentation
+│   ├── explain.md         # Explain code in plain English
+│   ├── migrate.md         # Code migration assistant
+│   ├── pr-prep.md         # Prepare PR descriptions
+│   ├── refactor.md        # Suggest refactoring improvements
+│   ├── security-audit.md  # Security vulnerability scan
+│   └── test-gen.md        # Generate unit tests
 ├── languages/             # Language-specific configs
 │   ├── python.md
 │   ├── go.md
