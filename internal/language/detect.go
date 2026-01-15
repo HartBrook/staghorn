@@ -82,7 +82,7 @@ func Detect(projectRoot string) ([]string, error) {
 func Resolve(cfg *LanguageConfig, projectRoot string) ([]string, error) {
 	// Explicit list takes precedence
 	if len(cfg.Enabled) > 0 {
-		return filterDisabled(cfg.Enabled, cfg.Disabled), nil
+		return FilterDisabled(cfg.Enabled, cfg.Disabled), nil
 	}
 
 	// If auto-detect is disabled and no explicit list, return empty
@@ -96,7 +96,7 @@ func Resolve(cfg *LanguageConfig, projectRoot string) ([]string, error) {
 		return nil, err
 	}
 
-	return filterDisabled(detected, cfg.Disabled), nil
+	return FilterDisabled(detected, cfg.Disabled), nil
 }
 
 // GetLanguage returns the Language struct for a given ID.
@@ -117,8 +117,8 @@ func GetDisplayName(id string) string {
 	return cases.Title(language.English).String(id)
 }
 
-// filterDisabled removes disabled languages from the list.
-func filterDisabled(languages, disabled []string) []string {
+// FilterDisabled removes disabled languages from the list.
+func FilterDisabled(languages, disabled []string) []string {
 	if len(disabled) == 0 {
 		return languages
 	}

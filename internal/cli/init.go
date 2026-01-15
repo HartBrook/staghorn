@@ -5,11 +5,14 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/HartBrook/staghorn/internal/config"
 	"github.com/HartBrook/staghorn/internal/errors"
 	"github.com/HartBrook/staghorn/internal/github"
+	"github.com/HartBrook/staghorn/internal/language"
+	"github.com/HartBrook/staghorn/internal/starter"
 	"github.com/spf13/cobra"
 )
 
@@ -141,11 +144,57 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Println("You can run `staghorn sync` later to fetch the config.")
 	}
 
+	// Create personal.md if it doesn't exist
+	if err := ensurePersonalMD(paths); err != nil {
+		printWarning("Failed to create personal config: %v", err)
+	}
+
+	// Offer to bootstrap starter actions
+	fmt.Println()
+	starterActions := starter.ActionNames()
+	if len(starterActions) > 0 {
+		fmt.Printf("Staghorn includes %d starter actions (code-review, debug, refactor, etc.)\n", len(starterActions))
+		if promptYesNo("Install starter actions to your personal config?") {
+			count, err := starter.BootstrapActions(paths.PersonalActions)
+			if err != nil {
+				printWarning("Failed to install starter actions: %v", err)
+			} else if count > 0 {
+				printSuccess("Installed %d starter actions to %s", count, paths.PersonalActions)
+				fmt.Printf("  %s Run '%s' to see them\n", dim("Tip:"), info("staghorn actions"))
+			} else {
+				fmt.Println("  Starter actions already installed")
+			}
+		}
+	}
+
+	// Offer to create personal language configs matching team languages
+	teamLangDir := paths.TeamLanguagesDir(owner, repo)
+	teamLangs, _ := listLanguageFiles(teamLangDir)
+	if len(teamLangs) > 0 {
+		fmt.Println()
+		fmt.Printf("Your team has %d language configs: %s\n", len(teamLangs), strings.Join(teamLangs, ", "))
+		if promptYesNo("Create personal language configs to customize them?") {
+			created := 0
+			for _, lang := range teamLangs {
+				if err := createPersonalLanguageFile(paths.PersonalLanguages, lang); err == nil {
+					created++
+				}
+			}
+			if created > 0 {
+				printSuccess("Created %d personal language configs in %s", created, paths.PersonalLanguages)
+				fmt.Printf("  %s Run '%s' to edit them\n", dim("Tip:"), info("staghorn edit --language <lang>"))
+			} else {
+				fmt.Println("  Personal language configs already exist")
+			}
+		}
+	}
+
 	fmt.Println()
 	fmt.Println("Setup complete!")
 	fmt.Println()
 	fmt.Println("Next steps:")
 	fmt.Printf("  %s    - add your personal preferences\n", info("staghorn edit"))
+	fmt.Printf("  %s - list available actions\n", info("staghorn actions"))
 	fmt.Println()
 	fmt.Println("Periodic updates:")
 	fmt.Printf("  %s              - fetch latest and apply\n", info("staghorn sync"))
@@ -272,4 +321,67 @@ func promptYesNo(prompt string) bool {
 	input, _ := reader.ReadString('\n')
 	input = strings.ToLower(strings.TrimSpace(input))
 	return input == "y" || input == "yes"
+}
+
+// listLanguageFiles returns the language IDs from .md files in a directory.
+func listLanguageFiles(dir string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+
+	var langs []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if strings.HasSuffix(name, ".md") {
+			langs = append(langs, strings.TrimSuffix(name, ".md"))
+		}
+	}
+	return langs, nil
+}
+
+// createPersonalLanguageFile creates a personal language config file if it doesn't exist.
+// The file is created with a template heading. Files without user content beyond
+// headings and comments are automatically skipped during merge.
+func createPersonalLanguageFile(dir, langID string) error {
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+
+	filePath := filepath.Join(dir, langID+".md")
+
+	// Skip if already exists
+	if _, err := os.Stat(filePath); err == nil {
+		return fmt.Errorf("file already exists")
+	}
+
+	// Get display name
+	displayName := language.GetDisplayName(langID)
+
+	template := fmt.Sprintf(`## My %s Preferences
+
+`, displayName)
+
+	return os.WriteFile(filePath, []byte(template), 0644)
+}
+
+// ensurePersonalMD creates the personal.md file if it doesn't exist.
+// The file is created with a minimal template that gets skipped during merge
+// until the user adds actual content.
+func ensurePersonalMD(paths *config.Paths) error {
+	if _, err := os.Stat(paths.PersonalMD); err == nil {
+		return nil // Already exists
+	}
+
+	if err := os.MkdirAll(paths.ConfigDir, 0755); err != nil {
+		return err
+	}
+
+	template := `## My Preferences
+
+`
+	return os.WriteFile(paths.PersonalMD, []byte(template), 0644)
 }

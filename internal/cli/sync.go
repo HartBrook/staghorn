@@ -352,23 +352,30 @@ func applyConfig(cfg *config.Config, paths *config.Paths, owner, repo string) er
 		personalConfig = []byte(stripInstructionalComments(string(personalConfig)))
 	}
 
-	// Resolve languages
-	projectRoot := findProjectRoot()
-	langCfg := language.LanguageConfig{
-		AutoDetect: cfg.Languages.AutoDetect,
-		Enabled:    cfg.Languages.Enabled,
-		Disabled:   cfg.Languages.Disabled,
-	}
-	activeLanguages, _ := language.Resolve(&langCfg, projectRoot)
+	// Resolve languages for global config
+	// For global ~/.claude/CLAUDE.md, include ALL available language configs from team + personal
+	// (auto-detect only makes sense for project-level configs)
+	teamLangDir := paths.TeamLanguagesDir(owner, repo)
+	personalLangDir := paths.PersonalLanguages
 
+	var activeLanguages []string
 	var languageFiles map[string][]*language.LanguageFile
+
+	if len(cfg.Languages.Enabled) > 0 {
+		// Explicit list takes precedence
+		activeLanguages = language.FilterDisabled(cfg.Languages.Enabled, cfg.Languages.Disabled)
+	} else {
+		// Default: include all available languages from team + personal
+		activeLanguages, _ = language.ListAvailableLanguages(teamLangDir, personalLangDir, "")
+		activeLanguages = language.FilterDisabled(activeLanguages, cfg.Languages.Disabled)
+	}
+
 	if len(activeLanguages) > 0 {
-		projectPaths := config.NewProjectPaths(projectRoot)
 		languageFiles, _ = language.LoadLanguageFiles(
 			activeLanguages,
-			paths.TeamLanguagesDir(owner, repo),
-			paths.PersonalLanguages,
-			projectPaths.LanguagesDir,
+			teamLangDir,
+			personalLangDir,
+			"", // No project dir for global config
 		)
 	}
 

@@ -8,6 +8,7 @@ import (
 
 	"github.com/HartBrook/staghorn/internal/actions"
 	"github.com/HartBrook/staghorn/internal/config"
+	"github.com/HartBrook/staghorn/internal/starter"
 	"github.com/spf13/cobra"
 )
 
@@ -42,7 +43,78 @@ Actions are reusable prompts that can be run with 'staghorn run <action>'.`,
 	cmd.Flags().StringVar(&source, "source", "", "Filter by source (team, personal, project)")
 	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show detailed information including arguments")
 
+	// Add subcommands
+	cmd.AddCommand(NewActionsInitCmd())
+
 	return cmd
+}
+
+// NewActionsInitCmd creates the 'actions init' command to bootstrap starter actions.
+func NewActionsInitCmd() *cobra.Command {
+	var project bool
+
+	cmd := &cobra.Command{
+		Use:   "init",
+		Short: "Install starter actions",
+		Long: `Installs staghorn's built-in starter actions to your personal or project config.
+
+Starter actions include common workflows like code-review, debug, refactor,
+test-gen, and more. Actions that already exist will be skipped.`,
+		Example: `  staghorn actions init           # Install to ~/.config/staghorn/actions/
+  staghorn actions init --project  # Install to .staghorn/actions/`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runActionsInit(project)
+		},
+	}
+
+	cmd.Flags().BoolVar(&project, "project", false, "Install to project directory (.staghorn/actions/)")
+
+	return cmd
+}
+
+func runActionsInit(project bool) error {
+	paths := config.NewPaths()
+
+	var targetDir string
+	var targetLabel string
+
+	if project {
+		projectRoot := findProjectRoot()
+		if projectRoot == "" {
+			return fmt.Errorf("no project root found (looking for .git or .staghorn directory)")
+		}
+		targetDir = config.ProjectActionsDir(projectRoot)
+		targetLabel = ".staghorn/actions/"
+	} else {
+		targetDir = paths.PersonalActions
+		targetLabel = paths.PersonalActions
+	}
+
+	// Show available actions
+	actionNames := starter.ActionNames()
+	fmt.Printf("Installing %d starter actions to %s\n", len(actionNames), targetLabel)
+	fmt.Println()
+
+	count, err := starter.BootstrapActions(targetDir)
+	if err != nil {
+		return fmt.Errorf("failed to install actions: %w", err)
+	}
+
+	if count > 0 {
+		printSuccess("Installed %d actions", count)
+		fmt.Println()
+		fmt.Println("Installed actions:")
+		for _, name := range actionNames {
+			fmt.Printf("  %s\n", info(name))
+		}
+	} else {
+		fmt.Println("All starter actions already installed.")
+	}
+
+	fmt.Println()
+	fmt.Printf("Run %s to see all available actions.\n", info("staghorn actions"))
+
+	return nil
 }
 
 func runActionsList(tagFilter, sourceFilter string, verbose bool) error {
@@ -307,19 +379,6 @@ func runAction(actionName string, rawArgs []string, dryRun bool) error {
 
 	fmt.Println(output)
 	return nil
-}
-
-// NewActionCmd creates the action parent command for management subcommands.
-func NewActionCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "action",
-		Short: "Manage actions",
-		Long:  `Commands for managing actions (info, new, edit, override).`,
-	}
-
-	cmd.AddCommand(NewActionInfoCmd())
-
-	return cmd
 }
 
 // NewActionInfoCmd creates the 'action info' command.
