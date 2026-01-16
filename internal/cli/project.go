@@ -91,6 +91,7 @@ func runProjectInit(templateName string) error {
 	// Determine content: template or default
 	var content string
 	if templateName != "" {
+		// Explicit template requested
 		templateContent, err := loadTemplate(templateName)
 		if err != nil {
 			return err
@@ -98,7 +99,18 @@ func runProjectInit(templateName string) error {
 		content = templateContent
 		printSuccess("Using template: %s", templateName)
 	} else {
-		content = defaultProjectTemplate
+		// Check if templates are available and offer selection
+		templateName = offerTemplateSelection()
+		if templateName != "" {
+			templateContent, err := loadTemplate(templateName)
+			if err != nil {
+				return err
+			}
+			content = templateContent
+			printSuccess("Using template: %s", templateName)
+		} else {
+			content = defaultProjectTemplate
+		}
 	}
 
 	// Write project.md
@@ -118,6 +130,68 @@ func runProjectInit(templateName string) error {
 	fmt.Printf("Edit your project config with: %s\n", info("staghorn project edit"))
 
 	return nil
+}
+
+// offerTemplateSelection checks for available templates and prompts the user to select one.
+// Returns empty string if no templates available or user chooses default.
+func offerTemplateSelection() string {
+	paths := config.NewPaths()
+
+	// Need team config to find templates
+	if !config.Exists() {
+		return ""
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		return ""
+	}
+
+	owner, repo, err := cfg.Team.ParseRepo()
+	if err != nil {
+		return ""
+	}
+
+	templatesDir := paths.TeamTemplatesDir(owner, repo)
+	templates := listAvailableTemplates(templatesDir)
+
+	if len(templates) == 0 {
+		return ""
+	}
+
+	// Show available templates
+	fmt.Println()
+	fmt.Printf("Your team has %d project templates available:\n", len(templates))
+	fmt.Println()
+	for i, name := range templates {
+		desc := getTemplateDescription(filepath.Join(templatesDir, name+".md"))
+		fmt.Printf("  %d. %-20s %s\n", i+1, info(name), dim(desc))
+	}
+	fmt.Printf("  %d. %-20s %s\n", len(templates)+1, info("default"), dim("Start with minimal template"))
+	fmt.Println()
+
+	choice := promptString("Choose a template [1-" + fmt.Sprintf("%d", len(templates)+1) + "]:")
+
+	// Parse choice
+	if choice == "" {
+		return "" // Default
+	}
+
+	// Check if it's a number
+	for i, name := range templates {
+		if choice == fmt.Sprintf("%d", i+1) || choice == name {
+			return name
+		}
+	}
+
+	// Check for "default" or last number
+	if choice == fmt.Sprintf("%d", len(templates)+1) || choice == "default" {
+		return ""
+	}
+
+	// Invalid choice, use default
+	fmt.Println("  Invalid choice, using default template")
+	return ""
 }
 
 // loadTemplate loads a template from the team cache.
