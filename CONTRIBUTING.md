@@ -45,10 +45,15 @@ staghorn/
 ├── internal/
 │   ├── cache/                   # Local cache management
 │   ├── cli/                     # Cobra commands
+│   ├── commands/                # Command parsing and execution
 │   ├── config/                  # Config file parsing
 │   ├── errors/                  # Typed error handling
 │   ├── github/                  # GitHub API client
-│   └── merge/                   # Markdown merge logic
+│   ├── merge/                   # Markdown merge logic
+│   └── starter/                 # Embedded starter content
+│       ├── commands/            # Starter command templates
+│       ├── languages/           # Starter language configs
+│       └── templates/           # Starter project templates
 ├── go.mod
 ├── go.sum
 ├── ARCHITECTURE.md              # Detailed design documentation
@@ -60,12 +65,14 @@ staghorn/
 
 | Package | Purpose |
 |---------|---------|
-| `internal/config` | Parses `config.yaml` and manages paths |
-| `internal/merge` | Section-based markdown merging |
-| `internal/cache` | Stores fetched configs with metadata |
-| `internal/github` | GitHub API client with auth handling |
 | `internal/cli` | All CLI commands (Cobra) |
+| `internal/cache` | Stores fetched configs with metadata |
+| `internal/commands` | Command parsing and execution |
+| `internal/config` | Parses `config.yaml` and manages paths |
 | `internal/errors` | Typed errors with hints |
+| `internal/github` | GitHub API client with auth handling |
+| `internal/merge` | Section-based markdown merging |
+| `internal/starter` | Embedded starter commands, languages, and templates |
 
 ## Development Workflow
 
