@@ -2,7 +2,7 @@
 
 A shared team layer for Claude Code.
 
-Staghorn syncs your team's shared CLAUDE.md guidelines from GitHub and merges them with your personal preferences. It writes the result to `~/.claude/CLAUDE.md` so Claude Code automatically picks it up.
+Staghorn syncs your team's shared CLAUDE.md guidelines, reusable commands, and language-specific configs from GitHub. It merges them with your personal preferences and writes them to `~/.claude/` so Claude Code automatically picks them up.
 
 ## Why Staghorn?
 
@@ -16,6 +16,7 @@ Without staghorn, teams copy-paste shared guidelines or use git submodules. With
 
 ```bash
 # 1. Install
+brew tap HartBrook/tap
 brew install staghorn
 
 # 2. Set up (one time)
@@ -56,6 +57,7 @@ You never need to edit the output files directly - Staghorn manages them.
 | `stag commands init`  | Install starter commands (code-review, debug, etc.)|
 | `stag run <command>`  | Run a command (outputs prompt to stdout)           |
 | `stag project`       | Manage project-level config (see below)            |
+| `stag team`          | Manage team standards repositories (see below)     |
 | `stag version`       | Print version number                               |
 
 ### Typical Workflow
@@ -71,34 +73,105 @@ stag info
 stag edit
 ```
 
-### Power User Flags
+## For Team Admins
+
+If you're the one setting up a shared standards repository for your team, start here.
+
+### Creating a Team Repository
+
+Use the `team init` command to bootstrap a new team standards repository:
 
 ```bash
-# Sync options
-stag sync --fetch-only     # Fetch without applying
-stag sync --apply-only     # Apply cached config without fetching
-stag sync --force          # Re-fetch even if cache is fresh
-stag sync --offline        # Use cached config only (no network)
-stag sync --config-only    # Sync config only, skip commands/languages
-stag sync --commands-only  # Sync commands only
-stag sync --languages-only # Sync language configs only
-
-# Edit options
-stag edit --no-apply       # Edit without auto-applying
-
-# Info options
-stag info --content        # Show full merged config
-stag info --layer team     # Show only team config (also: personal, project)
-stag info --sources        # Annotate output with source information
-stag info --languages auto # Control language inclusion (auto, none, or comma-separated list)
-
-# Command filtering
-stag commands --tag security   # Filter commands by tag
-stag commands --source team    # Filter by source (team, personal, project)
-stag run <command> --dry-run  # Preview command without rendering
+# In an empty directory or new git repo
+mkdir my-team-standards && cd my-team-standards
+git init
+stag team init
 ```
 
-## Adding Personal Preferences
+This interactive command:
+- Creates a starter `CLAUDE.md` with common guidelines
+- Lets you select which starter commands to include (all/some/none)
+- Lets you select which language configs to include (all/some/none)
+- Optionally adds project templates (backend-service, frontend-app, cli-tool)
+- Generates a README explaining the repo structure
+
+Then push to GitHub and share the repo URL with your team.
+
+### Team Init Flags
+
+```bash
+stag team init --non-interactive  # Use defaults without prompting
+stag team init --no-templates     # Skip project templates
+stag team init --no-readme        # Skip README.md generation
+```
+
+### Validating a Team Repository
+
+```bash
+stag team validate
+```
+
+This checks that:
+- `CLAUDE.md` exists and is non-empty
+- Commands have valid YAML frontmatter
+- Language configs are valid markdown
+- Templates (if present) are valid
+
+### Team Repository Structure
+
+Your team repo should have this structure:
+
+```
+your-org/claude-standards/
+├── CLAUDE.md           # Team guidelines (required)
+├── commands/            # Reusable prompt commands (optional)
+│   ├── security-audit.md
+│   ├── code-review.md
+│   └── pr-prep.md
+├── languages/          # Language-specific configs (optional)
+│   ├── python.md
+│   ├── go.md
+│   └── typescript.md
+└── templates/          # Project templates (optional)
+    ├── backend-service.md
+    └── react-app.md
+```
+
+> **See [`example/team-repo/`](example/team-repo/) for a complete example** with sample configs, commands, language files, and templates you can use as a starting point.
+
+### Example Team CLAUDE.md
+
+```markdown
+## Code Style
+
+- Use consistent formatting
+- Prefer explicit over implicit
+- Run linters before committing
+
+## Review Guidelines
+
+- All PRs require one approval
+- Keep PRs under 400 lines when possible
+```
+
+### Instructional Comments
+
+Team admins can add comments that appear in source files but are stripped from the final output. Use HTML comments with the `[staghorn]` prefix:
+
+```markdown
+## Code Review Guidelines
+
+<!-- [staghorn] Tip: Customize this section in your personal.md -->
+
+- All PRs require one approval
+- Keep PRs under 400 lines
+```
+
+The comment won't appear in `~/.claude/CLAUDE.md` — useful for adding hints or documentation for teammates editing the config.
+
+## Customization
+
+### Personal Preferences
 
 Your personal additions layer on top of team guidelines:
 
@@ -153,6 +226,55 @@ stag languages init
 stag languages init --project
 ```
 
+### Project Config
+
+Staghorn also optionally manages project-level `./CLAUDE.md` files. This keeps the experience consistent across all three layers.
+
+```bash
+# Initialize project config
+stag project init
+
+# Initialize from a team template
+stag project init --template=backend-service
+
+# List available templates
+stag project templates
+
+# Edit project config (auto-applies on save)
+stag project edit
+
+# Check status
+stag project info
+```
+
+The source file is `.staghorn/project.md`, and staghorn generates `./CLAUDE.md` from it. Both files should be committed to your repo.
+
+When team templates are available, `stag project init` shows an interactive menu to select one.
+
+### Project Templates
+
+Teams can provide project templates to help standardize CLAUDE.md configs across repositories. Templates live in the team repo's `templates/` directory:
+
+```
+your-org/claude-standards/
+├── CLAUDE.md
+├── commands/
+└── templates/
+    ├── backend-service.md
+    ├── react-app.md
+    └── data-pipeline.md
+```
+
+Use `stag project templates` to see available templates, then `stag project init --template=<name>` to use one.
+
+Staghorn includes 3 built-in starter templates that can be installed during `stag team init`:
+
+| Template | Description |
+|----------|-------------|
+| `backend-service` | Backend/API service with testing, logging, and deployment guidelines |
+| `frontend-app` | Frontend application with component, state, and styling conventions |
+| `cli-tool` | Command-line tool with argument parsing, output formatting, and distribution guidelines |
+
 ## Language-Specific Config
 
 Staghorn supports separate configuration files for each programming language, in addition to the shared config that applies to all projects.
@@ -179,7 +301,7 @@ Project config (auto-detected languages only)
 
 This lets you keep general guidelines (code review process, commit style, etc.) separate from language-specific rules (use pytest, prefer f-strings, etc.).
 
-### How It Works
+### How Language Configs Work
 
 Language configs are markdown files named by language ID (e.g., `python.md`, `go.md`, `typescript.md`). They follow the same layering as other configs:
 
@@ -210,7 +332,7 @@ Active Languages
   TypeScript      team
 ```
 
-### Configuration Options
+### Language Configuration Options
 
 By default, the global config includes all available language configs. You can customize this in `~/.config/staghorn/config.yaml`:
 
@@ -282,62 +404,7 @@ Staghorn can detect these languages automatically:
 
 > **Note:** When both TypeScript and JavaScript are detected, TypeScript takes precedence and JavaScript config is not applied. This avoids duplicate guidelines since TypeScript projects typically include `package.json`.
 
-### Team Repository Structure
-
-To include language configs in your team repo:
-
-```
-your-org/claude-standards/
-├── CLAUDE.md
-├── commands/
-├── templates/
-└── languages/
-    ├── python.md
-    ├── go.md
-    ├── typescript.md
-    └── rust.md
-```
-
-## Project Config
-
-Staghorn also optionally manages project-level `./CLAUDE.md` files. This keeps the experience consistent across all three layers.
-
-```bash
-# Initialize project config
-stag project init
-
-# Initialize from a team template
-stag project init --template=backend-service
-
-# List available templates
-stag project templates
-
-# Edit project config (auto-applies on save)
-stag project edit
-
-# Check status
-stag project info
-```
-
-The source file is `.staghorn/project.md`, and staghorn generates `./CLAUDE.md` from it. Both files should be committed to your repo.
-
-### Project Templates
-
-Teams can provide project templates to help standardize CLAUDE.md configs across repositories. Templates live in the team repo's `templates/` directory:
-
-```
-your-org/claude-standards/
-├── CLAUDE.md
-├── commands/
-└── templates/
-    ├── backend-service.md
-    ├── react-app.md
-    └── data-pipeline.md
-```
-
-Use `stag project templates` to see available templates, then `stag project init --template=<name>` to use one.
-
-## Commands
+## Reusable Commands
 
 Commands are reusable prompts for common workflows like security audits, code reviews, and documentation generation. They're synced from your team repo and can be customized locally.
 
@@ -425,41 +492,31 @@ Report issues at {{severity}} severity or higher.
 3. Missing auth checks
 ```
 
-## Team Repository Setup
+## Power User Flags
 
-Your team needs a GitHub repository with a `CLAUDE.md` file:
+```bash
+# Sync options
+stag sync --fetch-only     # Fetch without applying
+stag sync --apply-only     # Apply cached config without fetching
+stag sync --force          # Re-fetch even if cache is fresh
+stag sync --offline        # Use cached config only (no network)
+stag sync --config-only    # Sync config only, skip commands/languages
+stag sync --commands-only  # Sync commands only
+stag sync --languages-only # Sync language configs only
 
-```
-your-org/claude-standards/
-├── CLAUDE.md           # Team guidelines (required)
-├── commands/            # Reusable prompt commands (optional)
-│   ├── security-audit.md
-│   ├── code-review.md
-│   └── pr-prep.md
-├── languages/          # Language-specific configs (optional)
-│   ├── python.md
-│   ├── go.md
-│   └── typescript.md
-└── templates/          # Project templates (optional)
-    ├── backend-service.md
-    └── react-app.md
-```
+# Edit options
+stag edit --no-apply       # Edit without auto-applying
 
-> **See [`example/team-repo/`](example/team-repo/) for a complete example** with sample configs, commands, language files, and templates you can use as a starting point.
+# Info options
+stag info --content        # Show full merged config
+stag info --layer team     # Show only team config (also: personal, project)
+stag info --sources        # Annotate output with source information
+stag info --languages auto # Control language inclusion (auto, none, or comma-separated list)
 
-Example team `CLAUDE.md`:
-
-```markdown
-## Code Style
-
-- Use consistent formatting
-- Prefer explicit over implicit
-- Run linters before committing
-
-## Review Guidelines
-
-- All PRs require one approval
-- Keep PRs under 400 lines when possible
+# Command filtering
+stag commands --tag security   # Filter commands by tag
+stag commands --source team    # Filter by source (team, personal, project)
+stag run <command> --dry-run  # Preview command without rendering
 ```
 
 ## Installation
@@ -531,21 +588,6 @@ If you already have a `~/.claude/CLAUDE.md` that wasn't created by staghorn, the
 
 This ensures you don't lose any custom configuration you've already created.
 
-### Instructional Comments
-
-Team admins can add comments that appear in source files but are stripped from the final output. Use HTML comments with the `[staghorn]` prefix:
-
-```markdown
-## Code Review Guidelines
-
-<!-- [staghorn] Tip: Customize this section in your personal.md -->
-
-- All PRs require one approval
-- Keep PRs under 400 lines
-```
-
-The comment won't appear in `~/.claude/CLAUDE.md` — useful for adding hints or documentation for teammates editing the config.
-
 ## File Locations
 
 | File                              | Purpose                                         |
@@ -580,6 +622,9 @@ Run `stag sync --force` to re-fetch from GitHub regardless of cache age.
 
 **Config not updating after edit**
 Make sure you saved the file. If using `--no-apply`, run `stag sync --apply-only` to apply changes.
+
+**Homebrew shows "already installed" after new release**
+Run `brew update && brew upgrade staghorn`. If that doesn't work, use `brew reinstall staghorn`.
 
 **Languages not being detected**
 Check `stag languages` to see detection status. Ensure marker files (like `go.mod`, `pyproject.toml`) exist in your project root. You can also explicitly enable languages in `config.yaml`.
