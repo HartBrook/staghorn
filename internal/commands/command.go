@@ -1,5 +1,5 @@
-// Package actions handles staghorn action parsing, registry, and rendering.
-package actions
+// Package commands handles staghorn command parsing, registry, and rendering.
+package commands
 
 import (
 	"bufio"
@@ -11,16 +11,17 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Source indicates where an action came from.
+// Source indicates where a command came from.
 type Source string
 
 const (
 	SourceTeam     Source = "team"
 	SourcePersonal Source = "personal"
 	SourceProject  Source = "project"
+	SourceStarter  Source = "starter"
 )
 
-// Arg defines an action argument.
+// Arg defines a command argument.
 type Arg struct {
 	Name        string   `yaml:"name"`
 	Description string   `yaml:"description"`
@@ -29,7 +30,7 @@ type Arg struct {
 	Required    bool     `yaml:"required"`
 }
 
-// Frontmatter contains the YAML frontmatter of an action.
+// Frontmatter contains the YAML frontmatter of a command.
 type Frontmatter struct {
 	Name        string   `yaml:"name"`
 	Description string   `yaml:"description"`
@@ -37,21 +38,21 @@ type Frontmatter struct {
 	Args        []Arg    `yaml:"args,omitempty"`
 }
 
-// Action represents a staghorn action.
-type Action struct {
+// Command represents a staghorn command.
+type Command struct {
 	Frontmatter
 	Body     string // Markdown content after frontmatter
-	Source   Source // Where this action came from
-	FilePath string // Path to the action file
+	Source   Source // Where this command came from
+	FilePath string // Path to the command file
 }
 
-// Parse parses an action from markdown content.
-func Parse(content string, source Source, filePath string) (*Action, error) {
+// Parse parses a command from markdown content.
+func Parse(content string, source Source, filePath string) (*Command, error) {
 	lines := strings.Split(content, "\n")
 
 	// Check for frontmatter delimiter
 	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
-		return nil, fmt.Errorf("action must start with YAML frontmatter (---)")
+		return nil, fmt.Errorf("command must start with YAML frontmatter (---)")
 	}
 
 	// Find end of frontmatter
@@ -75,7 +76,7 @@ func Parse(content string, source Source, filePath string) (*Action, error) {
 	}
 
 	if fm.Name == "" {
-		return nil, fmt.Errorf("action must have a 'name' field in frontmatter")
+		return nil, fmt.Errorf("command must have a 'name' field in frontmatter")
 	}
 
 	// Extract body (everything after frontmatter)
@@ -84,7 +85,7 @@ func Parse(content string, source Source, filePath string) (*Action, error) {
 		body = strings.TrimSpace(strings.Join(lines[endIdx+1:], "\n"))
 	}
 
-	return &Action{
+	return &Command{
 		Frontmatter: fm,
 		Body:        body,
 		Source:      source,
@@ -92,25 +93,25 @@ func Parse(content string, source Source, filePath string) (*Action, error) {
 	}, nil
 }
 
-// ParseFile parses an action from a file.
-func ParseFile(path string, source Source) (*Action, error) {
+// ParseFile parses a command from a file.
+func ParseFile(path string, source Source) (*Command, error) {
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read action file: %w", err)
+		return nil, fmt.Errorf("failed to read command file: %w", err)
 	}
 	return Parse(string(content), source, path)
 }
 
-// LoadFromDirectory loads all actions from a directory.
-func LoadFromDirectory(dir string, source Source) ([]*Action, error) {
-	var actions []*Action
+// LoadFromDirectory loads all commands from a directory.
+func LoadFromDirectory(dir string, source Source) ([]*Command, error) {
+	var cmds []*Command
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil // Directory doesn't exist, return empty
 		}
-		return nil, fmt.Errorf("failed to read actions directory: %w", err)
+		return nil, fmt.Errorf("failed to read commands directory: %w", err)
 	}
 
 	for _, entry := range entries {
@@ -124,22 +125,22 @@ func LoadFromDirectory(dir string, source Source) ([]*Action, error) {
 		}
 
 		path := filepath.Join(dir, entry.Name())
-		action, err := ParseFile(path, source)
+		cmd, err := ParseFile(path, source)
 		if err != nil {
-			// Log warning but continue loading other actions
+			// Log warning but continue loading other commands
 			fmt.Fprintf(os.Stderr, "Warning: failed to parse %s: %v\n", path, err)
 			continue
 		}
 
-		actions = append(actions, action)
+		cmds = append(cmds, cmd)
 	}
 
-	return actions, nil
+	return cmds, nil
 }
 
-// HasArg checks if the action has a specific argument.
-func (a *Action) HasArg(name string) bool {
-	for _, arg := range a.Args {
+// HasArg checks if the command has a specific argument.
+func (c *Command) HasArg(name string) bool {
+	for _, arg := range c.Args {
 		if arg.Name == name {
 			return true
 		}
@@ -148,32 +149,32 @@ func (a *Action) HasArg(name string) bool {
 }
 
 // GetArg returns an argument by name.
-func (a *Action) GetArg(name string) *Arg {
-	for i := range a.Args {
-		if a.Args[i].Name == name {
-			return &a.Args[i]
+func (c *Command) GetArg(name string) *Arg {
+	for i := range c.Args {
+		if c.Args[i].Name == name {
+			return &c.Args[i]
 		}
 	}
 	return nil
 }
 
-// ValidateArgs validates provided arguments against the action's definition.
-func (a *Action) ValidateArgs(args map[string]string) error {
+// ValidateArgs validates provided arguments against the command's definition.
+func (c *Command) ValidateArgs(args map[string]string) error {
 	// Build set of known arg names
 	knownArgs := make(map[string]bool)
-	for _, arg := range a.Args {
+	for _, arg := range c.Args {
 		knownArgs[arg.Name] = true
 	}
 
 	// Check for unknown args
 	for name := range args {
 		if !knownArgs[name] {
-			return fmt.Errorf("unknown argument '%s' (available: %s)", name, a.argNames())
+			return fmt.Errorf("unknown argument '%s' (available: %s)", name, c.argNames())
 		}
 	}
 
 	// Check required args are provided
-	for _, arg := range a.Args {
+	for _, arg := range c.Args {
 		if arg.Required {
 			if _, ok := args[arg.Name]; !ok {
 				return fmt.Errorf("required argument '%s' not provided", arg.Name)
@@ -202,24 +203,24 @@ func (a *Action) ValidateArgs(args map[string]string) error {
 }
 
 // argNames returns a comma-separated list of argument names.
-func (a *Action) argNames() string {
-	if len(a.Args) == 0 {
+func (c *Command) argNames() string {
+	if len(c.Args) == 0 {
 		return "none"
 	}
-	names := make([]string, len(a.Args))
-	for i, arg := range a.Args {
+	names := make([]string, len(c.Args))
+	for i, arg := range c.Args {
 		names[i] = arg.Name
 	}
 	return strings.Join(names, ", ")
 }
 
 // GetArgWithDefault returns the argument value or its default.
-func (a *Action) GetArgWithDefault(args map[string]string, name string) string {
+func (c *Command) GetArgWithDefault(args map[string]string, name string) string {
 	if val, ok := args[name]; ok {
 		return val
 	}
 
-	if arg := a.GetArg(name); arg != nil {
+	if arg := c.GetArg(name); arg != nil {
 		return arg.Default
 	}
 
@@ -235,13 +236,15 @@ func (s Source) Label() string {
 		return "personal"
 	case SourceProject:
 		return "project"
+	case SourceStarter:
+		return "starter"
 	default:
 		return string(s)
 	}
 }
 
-// NewActionTemplate returns a template for creating a new action.
-func NewActionTemplate(name, description string) string {
+// NewCommandTemplate returns a template for creating a new command.
+func NewCommandTemplate(name, description string) string {
 	return fmt.Sprintf(`---
 name: %s
 description: %s
@@ -280,7 +283,7 @@ func toTitleCase(s string) string {
 }
 
 // ReadFrontmatterOnly reads just the frontmatter without loading the full body.
-// Useful for listing actions without loading all content into memory.
+// Useful for listing commands without loading all content into memory.
 func ReadFrontmatterOnly(path string) (*Frontmatter, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -292,7 +295,7 @@ func ReadFrontmatterOnly(path string) (*Frontmatter, error) {
 
 	// First line must be ---
 	if !scanner.Scan() || strings.TrimSpace(scanner.Text()) != "---" {
-		return nil, fmt.Errorf("action must start with YAML frontmatter (---)")
+		return nil, fmt.Errorf("command must start with YAML frontmatter (---)")
 	}
 
 	// Read until closing ---

@@ -13,7 +13,7 @@ type Paths struct {
 	CacheDir          string // ~/.cache/staghorn
 	ConfigFile        string // ~/.config/staghorn/config.yaml
 	PersonalMD        string // ~/.config/staghorn/personal.md
-	PersonalActions   string // ~/.config/staghorn/actions
+	PersonalCommands  string // ~/.config/staghorn/commands
 	PersonalLanguages string // ~/.config/staghorn/languages
 }
 
@@ -30,7 +30,7 @@ func NewPaths() *Paths {
 		CacheDir:          cacheDir,
 		ConfigFile:        filepath.Join(configDir, "config.yaml"),
 		PersonalMD:        filepath.Join(configDir, "personal.md"),
-		PersonalActions:   filepath.Join(configDir, "actions"),
+		PersonalCommands:  filepath.Join(configDir, "commands"),
 		PersonalLanguages: filepath.Join(configDir, "languages"),
 	}
 }
@@ -42,7 +42,7 @@ func NewPathsWithOverrides(configDir, cacheDir string) *Paths {
 		CacheDir:          cacheDir,
 		ConfigFile:        filepath.Join(configDir, "config.yaml"),
 		PersonalMD:        filepath.Join(configDir, "personal.md"),
-		PersonalActions:   filepath.Join(configDir, "actions"),
+		PersonalCommands:  filepath.Join(configDir, "commands"),
 		PersonalLanguages: filepath.Join(configDir, "languages"),
 	}
 }
@@ -57,9 +57,9 @@ func (p *Paths) CacheMetadataFile(owner, repo string) string {
 	return filepath.Join(p.CacheDir, fmt.Sprintf("%s-%s.meta.json", owner, repo))
 }
 
-// TeamActionsDir returns the path for cached team actions.
-func (p *Paths) TeamActionsDir(owner, repo string) string {
-	return filepath.Join(p.CacheDir, fmt.Sprintf("%s-%s-actions", owner, repo))
+// TeamCommandsDir returns the path for cached team commands.
+func (p *Paths) TeamCommandsDir(owner, repo string) string {
+	return filepath.Join(p.CacheDir, fmt.Sprintf("%s-%s-commands", owner, repo))
 }
 
 // TeamTemplatesDir returns the path for cached team project templates.
@@ -72,10 +72,21 @@ func (p *Paths) TeamLanguagesDir(owner, repo string) string {
 	return filepath.Join(p.CacheDir, fmt.Sprintf("%s-%s-languages", owner, repo))
 }
 
-// ProjectActionsDir returns the path for project-specific actions.
-// This is relative to the project root (.staghorn/actions/).
-func ProjectActionsDir(projectRoot string) string {
-	return filepath.Join(projectRoot, ".staghorn", "actions")
+// ClaudeCommandsDir returns the path for Claude Code custom commands.
+func (p *Paths) ClaudeCommandsDir() string {
+	home := os.Getenv("HOME")
+	return filepath.Join(home, ".claude", "commands")
+}
+
+// ProjectClaudeCommandsDir returns the path for project-level Claude Code commands.
+func ProjectClaudeCommandsDir(projectRoot string) string {
+	return filepath.Join(projectRoot, ".claude", "commands")
+}
+
+// ProjectCommandsDir returns the path for project-specific commands.
+// This is relative to the project root (.staghorn/commands/).
+func ProjectCommandsDir(projectRoot string) string {
+	return filepath.Join(projectRoot, ".staghorn", "commands")
 }
 
 // ProjectPaths holds paths for project-level config management.
@@ -84,7 +95,7 @@ type ProjectPaths struct {
 	StaghornDir  string // .staghorn/
 	SourceMD     string // .staghorn/project.md (source of truth)
 	OutputMD     string // ./CLAUDE.md (generated output)
-	ActionsDir   string // .staghorn/actions/
+	CommandsDir  string // .staghorn/commands/
 	LanguagesDir string // .staghorn/languages/
 	ConfigFile   string // .staghorn/config.yaml (optional project config)
 }
@@ -97,7 +108,7 @@ func NewProjectPaths(projectRoot string) *ProjectPaths {
 		StaghornDir:  staghornDir,
 		SourceMD:     filepath.Join(staghornDir, "project.md"),
 		OutputMD:     filepath.Join(projectRoot, "CLAUDE.md"),
-		ActionsDir:   filepath.Join(staghornDir, "actions"),
+		CommandsDir:  filepath.Join(staghornDir, "commands"),
 		LanguagesDir: filepath.Join(staghornDir, "languages"),
 		ConfigFile:   filepath.Join(staghornDir, "config.yaml"),
 	}

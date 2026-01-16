@@ -52,9 +52,9 @@ You never need to edit the output files directly - Staghorn manages them.
 | `stag info`          | Show current config state                          |
 | `stag languages`     | Show detected and configured languages             |
 | `stag languages init`| Install starter language configs                   |
-| `stag actions`       | List actions or show info for a specific action    |
-| `stag actions init`  | Install starter actions (code-review, debug, etc.) |
-| `stag run <action>`  | Run an action (outputs prompt to stdout)           |
+| `stag commands`       | List commands or show info for a specific command  |
+| `stag commands init`  | Install starter commands (code-review, debug, etc.)|
+| `stag run <command>`  | Run a command (outputs prompt to stdout)           |
 | `stag project`       | Manage project-level config (see below)            |
 | `stag version`       | Print version number                               |
 
@@ -79,8 +79,8 @@ stag sync --fetch-only     # Fetch without applying
 stag sync --apply-only     # Apply cached config without fetching
 stag sync --force          # Re-fetch even if cache is fresh
 stag sync --offline        # Use cached config only (no network)
-stag sync --config-only    # Sync config only, skip actions/languages
-stag sync --actions-only   # Sync actions only
+stag sync --config-only    # Sync config only, skip commands/languages
+stag sync --commands-only  # Sync commands only
 stag sync --languages-only # Sync language configs only
 
 # Edit options
@@ -92,10 +92,10 @@ stag info --layer team     # Show only team config (also: personal, project)
 stag info --sources        # Annotate output with source information
 stag info --languages auto # Control language inclusion (auto, none, or comma-separated list)
 
-# Action filtering
-stag actions --tag security   # Filter actions by tag
-stag actions --source team    # Filter by source (team, personal, project)
-stag run <action> --dry-run   # Preview action without rendering
+# Command filtering
+stag commands --tag security   # Filter commands by tag
+stag commands --source team    # Filter by source (team, personal, project)
+stag run <command> --dry-run  # Preview command without rendering
 ```
 
 ## Adding Personal Preferences
@@ -289,7 +289,7 @@ To include language configs in your team repo:
 ```
 your-org/claude-standards/
 ├── CLAUDE.md
-├── actions/
+├── commands/
 ├── templates/
 └── languages/
     ├── python.md
@@ -328,7 +328,7 @@ Teams can provide project templates to help standardize CLAUDE.md configs across
 ```
 your-org/claude-standards/
 ├── CLAUDE.md
-├── actions/
+├── commands/
 └── templates/
     ├── backend-service.md
     ├── react-app.md
@@ -337,45 +337,51 @@ your-org/claude-standards/
 
 Use `stag project templates` to see available templates, then `stag project init --template=<name>` to use one.
 
-## Actions
+## Commands
 
-Actions are reusable prompts for common workflows like security audits, code reviews, and documentation generation. They're synced from your team repo and can be customized locally.
+Commands are reusable prompts for common workflows like security audits, code reviews, and documentation generation. They're synced from your team repo and can be customized locally.
+
+Commands can also be installed directly as Claude Code slash commands, so you can use `/code-review` directly in Claude Code:
 
 ```bash
-# List available actions
-stag actions
+stag commands init --claude    # Install to ~/.claude/commands/
+```
+
+```bash
+# List available commands
+stag commands
 
 # List with verbose details
-stag actions -v
+stag commands -v
 
-# Show info for a specific action
-stag actions security-audit
+# Show info for a specific command
+stag commands security-audit
 
-# Run an action
+# Run a command
 stag run security-audit
 
 # Run with arguments
 stag run security-audit --path=src/ --severity=high
 ```
 
-Actions can come from three sources (highest precedence first):
+Commands can come from three sources (highest precedence first):
 
-1. **Project** — `.staghorn/actions/` in your repo
-2. **Personal** — `~/.config/staghorn/actions/`
-3. **Team** — `actions/` directory in team repo
+1. **Project** — `.staghorn/commands/` in your repo
+2. **Personal** — `~/.config/staghorn/commands/`
+3. **Team** — `commands/` directory in team repo
 
-### Starter Actions
+### Starter Commands
 
-Staghorn includes 10 starter actions that you can install during `stag init` or anytime with:
+Staghorn includes 10 starter commands that you can install during `stag init` or anytime with:
 
 ```bash
-stag actions init              # Install to ~/.config/staghorn/actions/
-stag actions init --project    # Install to .staghorn/actions/
+stag commands init              # Install to ~/.config/staghorn/commands/
+stag commands init --project    # Install to .staghorn/commands/
 ```
 
-These actions are ready to use out of the box:
+These commands are ready to use out of the box:
 
-| Action | Description | Example |
+| Command | Description | Example |
 |--------|-------------|---------|
 | `code-review` | Thorough code review with checklist | `stag run code-review --focus=security` |
 | `security-audit` | Scan for vulnerabilities | `stag run security-audit --severity=high` |
@@ -388,9 +394,9 @@ These actions are ready to use out of the box:
 | `migrate` | Help migrate code | `stag run migrate --from=v1 --to=v2` |
 | `api-design` | Design API interfaces | `stag run api-design --resource=users` |
 
-### Creating Actions
+### Creating Commands
 
-An action is a markdown file with YAML frontmatter:
+A command is a markdown file with YAML frontmatter:
 
 ```markdown
 ---
@@ -426,7 +432,7 @@ Your team needs a GitHub repository with a `CLAUDE.md` file:
 ```
 your-org/claude-standards/
 ├── CLAUDE.md           # Team guidelines (required)
-├── actions/            # Reusable prompts (optional)
+├── commands/            # Reusable prompt commands (optional)
 │   ├── security-audit.md
 │   ├── code-review.md
 │   └── pr-prep.md
@@ -439,7 +445,7 @@ your-org/claude-standards/
     └── react-app.md
 ```
 
-> **See [`example/team-repo/`](example/team-repo/) for a complete example** with sample configs, actions, language files, and templates you can use as a starting point.
+> **See [`example/team-repo/`](example/team-repo/) for a complete example** with sample configs, commands, language files, and templates you can use as a starting point.
 
 Example team `CLAUDE.md`:
 
@@ -546,12 +552,12 @@ The comment won't appear in `~/.claude/CLAUDE.md` — useful for adding hints or
 | --------------------------------- | ----------------------------------------------- |
 | `~/.config/staghorn/config.yaml`  | Staghorn settings (team repo, etc.)             |
 | `~/.config/staghorn/personal.md`  | Your personal additions                         |
-| `~/.config/staghorn/actions/`     | Personal actions                                |
+| `~/.config/staghorn/commands/`     | Personal commands                                |
 | `~/.config/staghorn/languages/`   | Personal language configs                       |
-| `~/.cache/staghorn/`              | Cached team config, actions, and languages      |
+| `~/.cache/staghorn/`              | Cached team config, commands, and languages      |
 | `~/.claude/CLAUDE.md`             | **Output** — global config managed by staghorn  |
 | `.staghorn/project.md`            | Project config source (you edit this)           |
-| `.staghorn/actions/`              | Project-specific actions                        |
+| `.staghorn/commands/`              | Project-specific commands                        |
 | `.staghorn/languages/`            | Project-specific language configs               |
 | `./CLAUDE.md`                     | **Output** — project config managed by staghorn |
 
@@ -578,8 +584,8 @@ Make sure you saved the file. If using `--no-apply`, run `stag sync --apply-only
 **Languages not being detected**
 Check `stag languages` to see detection status. Ensure marker files (like `go.mod`, `pyproject.toml`) exist in your project root. You can also explicitly enable languages in `config.yaml`.
 
-**Action not found**
-Run `stag actions` to see all available actions and their sources. Remember that project actions override personal, which override team.
+**Command not found**
+Run `stag commands` to see all available commands and their sources. Remember that project commands override personal, which override team.
 
 ## License
 

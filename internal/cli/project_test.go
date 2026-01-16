@@ -284,8 +284,8 @@ func TestProjectPaths(t *testing.T) {
 		t.Errorf("OutputMD = %s, want /my/project/CLAUDE.md", paths.OutputMD)
 	}
 
-	if paths.ActionsDir != "/my/project/.staghorn/actions" {
-		t.Errorf("ActionsDir = %s, want /my/project/.staghorn/actions", paths.ActionsDir)
+	if paths.CommandsDir != "/my/project/.staghorn/commands" {
+		t.Errorf("CommandsDir = %s, want /my/project/.staghorn/commands", paths.CommandsDir)
 	}
 }
 

@@ -226,7 +226,7 @@ Create a test repository with sample configs:
 ```
 test-team-config/
 ├── CLAUDE.md
-└── actions/
+└── commands/
     ├── hello-world.md
     └── code-review.md
 ```

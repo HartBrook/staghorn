@@ -1,4 +1,4 @@
-package actions
+package commands
 
 import (
 	"os"
@@ -19,7 +19,7 @@ func TestParse(t *testing.T) {
 		errContains string
 	}{
 		{
-			name: "valid action with all fields",
+			name: "valid command with all fields",
 			content: `---
 name: security-audit
 description: Scan for vulnerabilities
@@ -40,7 +40,7 @@ Check the code at {{path}}.`,
 			wantBody: "# Security Audit\n\nCheck the code at {{path}}.",
 		},
 		{
-			name: "minimal action",
+			name: "minimal command",
 			content: `---
 name: simple
 ---
@@ -72,7 +72,7 @@ Body here.`,
 			errContains: "must have a 'name' field",
 		},
 		{
-			name: "action with options",
+			name: "command with options",
 			content: `---
 name: with-options
 args:
@@ -89,7 +89,7 @@ Check with {{severity}} severity.`,
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			action, err := Parse(tt.content, SourceTeam, "test.md")
+			cmd, err := Parse(tt.content, SourceTeam, "test.md")
 
 			if tt.wantErr {
 				if err == nil {
@@ -104,24 +104,24 @@ Check with {{severity}} severity.`,
 				t.Fatalf("unexpected error: %v", err)
 			}
 
-			if action.Name != tt.wantName {
-				t.Errorf("Name = %q, want %q", action.Name, tt.wantName)
+			if cmd.Name != tt.wantName {
+				t.Errorf("Name = %q, want %q", cmd.Name, tt.wantName)
 			}
 
-			if tt.wantDesc != "" && action.Description != tt.wantDesc {
-				t.Errorf("Description = %q, want %q", action.Description, tt.wantDesc)
+			if tt.wantDesc != "" && cmd.Description != tt.wantDesc {
+				t.Errorf("Description = %q, want %q", cmd.Description, tt.wantDesc)
 			}
 
-			if tt.wantTags != nil && len(action.Tags) != len(tt.wantTags) {
-				t.Errorf("Tags = %v, want %v", action.Tags, tt.wantTags)
+			if tt.wantTags != nil && len(cmd.Tags) != len(tt.wantTags) {
+				t.Errorf("Tags = %v, want %v", cmd.Tags, tt.wantTags)
 			}
 
-			if len(action.Args) != tt.wantArgs {
-				t.Errorf("len(Args) = %d, want %d", len(action.Args), tt.wantArgs)
+			if len(cmd.Args) != tt.wantArgs {
+				t.Errorf("len(Args) = %d, want %d", len(cmd.Args), tt.wantArgs)
 			}
 
-			if tt.wantBody != "" && action.Body != tt.wantBody {
-				t.Errorf("Body = %q, want %q", action.Body, tt.wantBody)
+			if tt.wantBody != "" && cmd.Body != tt.wantBody {
+				t.Errorf("Body = %q, want %q", cmd.Body, tt.wantBody)
 			}
 		})
 	}
@@ -184,7 +184,7 @@ func TestRender(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			action := &Action{
+			cmd := &Command{
 				Frontmatter: Frontmatter{
 					Name: "test",
 					Args: tt.args,
@@ -192,7 +192,7 @@ func TestRender(t *testing.T) {
 				Body: tt.body,
 			}
 
-			result, err := action.Render(tt.input)
+			result, err := cmd.Render(tt.input)
 
 			if tt.wantErr {
 				if err == nil {
@@ -287,26 +287,26 @@ func TestParseArgs(t *testing.T) {
 func TestRegistry(t *testing.T) {
 	registry := NewRegistry()
 
-	// Add team action
-	teamAction := &Action{
+	// Add team command
+	teamCmd := &Command{
 		Frontmatter: Frontmatter{Name: "audit", Description: "Team audit"},
 		Source:      SourceTeam,
 	}
-	registry.Add(teamAction)
+	registry.Add(teamCmd)
 
 	// Add personal override
-	personalAction := &Action{
+	personalCmd := &Command{
 		Frontmatter: Frontmatter{Name: "audit", Description: "Personal audit"},
 		Source:      SourcePersonal,
 	}
-	registry.Add(personalAction)
+	registry.Add(personalCmd)
 
-	// Add project action
-	projectAction := &Action{
+	// Add project command
+	projectCmd := &Command{
 		Frontmatter: Frontmatter{Name: "project-only", Description: "Project specific"},
 		Source:      SourceProject,
 	}
-	registry.Add(projectAction)
+	registry.Add(projectCmd)
 
 	// Test Get returns highest precedence
 	got := registry.Get("audit")
@@ -326,30 +326,30 @@ func TestRegistry(t *testing.T) {
 	}
 
 	// Test BySource
-	teamActions := registry.BySource(SourceTeam)
-	if len(teamActions) != 1 {
-		t.Errorf("BySource(team) = %d, want 1", len(teamActions))
+	teamCmds := registry.BySource(SourceTeam)
+	if len(teamCmds) != 1 {
+		t.Errorf("BySource(team) = %d, want 1", len(teamCmds))
 	}
 }
 
 func TestLoadFromDirectory(t *testing.T) {
-	// Create temp directory with test actions
+	// Create temp directory with test commands
 	tempDir := t.TempDir()
 
-	// Create valid action
-	validAction := `---
-name: valid-action
-description: A valid action
+	// Create valid command
+	validCmd := `---
+name: valid-command
+description: A valid command
 ---
 
 Do something.`
-	if err := os.WriteFile(filepath.Join(tempDir, "valid.md"), []byte(validAction), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(tempDir, "valid.md"), []byte(validCmd), 0644); err != nil {
 		t.Fatal(err)
 	}
 
-	// Create invalid action (should be skipped with warning)
-	invalidAction := `Not a valid action file`
-	if err := os.WriteFile(filepath.Join(tempDir, "invalid.md"), []byte(invalidAction), 0644); err != nil {
+	// Create invalid command (should be skipped with warning)
+	invalidCmd := `Not a valid command file`
+	if err := os.WriteFile(filepath.Join(tempDir, "invalid.md"), []byte(invalidCmd), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -358,27 +358,27 @@ Do something.`
 		t.Fatal(err)
 	}
 
-	actions, err := LoadFromDirectory(tempDir, SourceTeam)
+	cmds, err := LoadFromDirectory(tempDir, SourceTeam)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(actions) != 1 {
-		t.Errorf("LoadFromDirectory() returned %d actions, want 1", len(actions))
+	if len(cmds) != 1 {
+		t.Errorf("LoadFromDirectory() returned %d commands, want 1", len(cmds))
 	}
 
-	if actions[0].Name != "valid-action" {
-		t.Errorf("action name = %q, want %q", actions[0].Name, "valid-action")
+	if cmds[0].Name != "valid-command" {
+		t.Errorf("command name = %q, want %q", cmds[0].Name, "valid-command")
 	}
 }
 
 func TestLoadFromNonexistentDirectory(t *testing.T) {
-	actions, err := LoadFromDirectory("/nonexistent/path", SourceTeam)
+	cmds, err := LoadFromDirectory("/nonexistent/path", SourceTeam)
 	if err != nil {
 		t.Errorf("expected nil error for nonexistent directory, got %v", err)
 	}
-	if actions != nil {
-		t.Errorf("expected nil actions for nonexistent directory, got %v", actions)
+	if cmds != nil {
+		t.Errorf("expected nil commands for nonexistent directory, got %v", cmds)
 	}
 }
 

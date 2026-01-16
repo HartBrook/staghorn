@@ -9,7 +9,7 @@ This directory shows what a team's shared Claude Code standards repository shoul
 ```
 team-repo/
 ├── CLAUDE.md              # Shared guidelines (required)
-├── actions/               # Reusable prompts
+├── commands/              # Reusable prompts
 │   ├── api-design.md      # Design API interfaces
 │   ├── code-review.md     # Thorough code review
 │   ├── debug.md           # Bug investigation helper
@@ -44,12 +44,12 @@ To use this as your team's standards repo:
 
 - **CLAUDE.md**: Add your team's general coding standards
 - **languages/**: Add configs for languages your team uses
-- **actions/**: Create prompts for common workflows
+- **commands/**: Create prompts for common workflows
 - **templates/**: Add project templates for different project types
 
 ## Tips
 
 - Keep guidelines concise and actionable
 - Update regularly based on team feedback
-- Use actions for repetitive tasks
+- Use commands for repetitive tasks
 - Language configs should complement, not repeat, the main CLAUDE.md

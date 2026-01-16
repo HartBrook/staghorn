@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(/tmp/stag-new commands code-review:*)"
+    ]
+  }
+}
