@@ -1,4 +1,4 @@
-package actions
+package commands
 
 import (
 	"fmt"
@@ -10,17 +10,17 @@ import (
 // This is a user-friendly syntax that doesn't require the Go template dot prefix.
 var templateVarPattern = regexp.MustCompile(`\{\{(\w+)\}\}`)
 
-// Render renders an action's body with the provided arguments.
+// Render renders a command's body with the provided arguments.
 // Uses a simple {{varname}} syntax for user-friendliness.
-func (a *Action) Render(args map[string]string) (string, error) {
+func (c *Command) Render(args map[string]string) (string, error) {
 	// Validate args first
-	if err := a.ValidateArgs(args); err != nil {
+	if err := c.ValidateArgs(args); err != nil {
 		return "", err
 	}
 
 	// Build complete args map with defaults
 	fullArgs := make(map[string]string)
-	for _, arg := range a.Args {
+	for _, arg := range c.Args {
 		if arg.Default != "" {
 			fullArgs[arg.Name] = arg.Default
 		}
@@ -30,7 +30,7 @@ func (a *Action) Render(args map[string]string) (string, error) {
 	}
 
 	// Replace template variables
-	result := templateVarPattern.ReplaceAllStringFunc(a.Body, func(match string) string {
+	result := templateVarPattern.ReplaceAllStringFunc(c.Body, func(match string) string {
 		// Extract variable name from {{varname}}
 		varName := match[2 : len(match)-2]
 
@@ -46,15 +46,15 @@ func (a *Action) Render(args map[string]string) (string, error) {
 }
 
 // RenderWithValidation renders and also returns warnings for undefined variables.
-func (a *Action) RenderWithValidation(args map[string]string) (string, []string, error) {
+func (c *Command) RenderWithValidation(args map[string]string) (string, []string, error) {
 	// Validate args first
-	if err := a.ValidateArgs(args); err != nil {
+	if err := c.ValidateArgs(args); err != nil {
 		return "", nil, err
 	}
 
 	// Build complete args map with defaults
 	fullArgs := make(map[string]string)
-	for _, arg := range a.Args {
+	for _, arg := range c.Args {
 		if arg.Default != "" {
 			fullArgs[arg.Name] = arg.Default
 		}
@@ -64,9 +64,9 @@ func (a *Action) RenderWithValidation(args map[string]string) (string, []string,
 	}
 
 	// Find all template variables in the body
-	matches := templateVarPattern.FindAllStringSubmatch(a.Body, -1)
+	matches := templateVarPattern.FindAllStringSubmatch(c.Body, -1)
 	definedVars := make(map[string]bool)
-	for _, arg := range a.Args {
+	for _, arg := range c.Args {
 		definedVars[arg.Name] = true
 	}
 
@@ -81,7 +81,7 @@ func (a *Action) RenderWithValidation(args map[string]string) (string, []string,
 	}
 
 	// Replace template variables
-	result := templateVarPattern.ReplaceAllStringFunc(a.Body, func(match string) string {
+	result := templateVarPattern.ReplaceAllStringFunc(c.Body, func(match string) string {
 		varName := match[2 : len(match)-2]
 		if val, ok := fullArgs[varName]; ok {
 			return val
@@ -92,9 +92,9 @@ func (a *Action) RenderWithValidation(args map[string]string) (string, []string,
 	return result, warnings, nil
 }
 
-// ExtractVariables returns all variable names used in the action body.
-func (a *Action) ExtractVariables() []string {
-	matches := templateVarPattern.FindAllStringSubmatch(a.Body, -1)
+// ExtractVariables returns all variable names used in the command body.
+func (c *Command) ExtractVariables() []string {
+	matches := templateVarPattern.FindAllStringSubmatch(c.Body, -1)
 	seen := make(map[string]bool)
 	var vars []string
 
@@ -150,14 +150,14 @@ func ParseArgs(rawArgs []string) (map[string]string, error) {
 	return args, nil
 }
 
-// FormatArgsHelp formats the arguments help text for an action.
-func (a *Action) FormatArgsHelp() string {
-	if len(a.Args) == 0 {
+// FormatArgsHelp formats the arguments help text for a command.
+func (c *Command) FormatArgsHelp() string {
+	if len(c.Args) == 0 {
 		return "  No arguments"
 	}
 
 	var lines []string
-	for _, arg := range a.Args {
+	for _, arg := range c.Args {
 		line := fmt.Sprintf("  --%s", arg.Name)
 
 		if arg.Required {

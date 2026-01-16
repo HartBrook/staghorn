@@ -43,7 +43,7 @@ configs on top, and outputs a merged file for Claude to consume.`,
 	rootCmd.AddCommand(NewEditCmd())
 	rootCmd.AddCommand(NewInfoCmd())
 	rootCmd.AddCommand(NewProjectCmd())
-	rootCmd.AddCommand(NewActionsCmd())
+	rootCmd.AddCommand(NewCommandsCmd())
 	rootCmd.AddCommand(NewRunCmd())
 	rootCmd.AddCommand(NewLanguagesCmd())
 	rootCmd.AddCommand(NewVersionCmd())

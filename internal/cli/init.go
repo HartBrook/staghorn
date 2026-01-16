@@ -149,20 +149,27 @@ func runInit(cmd *cobra.Command, args []string) error {
 		printWarning("Failed to create personal config: %v", err)
 	}
 
-	// Offer to bootstrap starter actions
+	// Offer to bootstrap starter commands
 	fmt.Println()
-	starterActions := starter.ActionNames()
-	if len(starterActions) > 0 {
-		fmt.Printf("Staghorn includes %d starter actions (code-review, debug, refactor, etc.)\n", len(starterActions))
-		if promptYesNo("Install starter actions to your personal config?") {
-			count, err := starter.BootstrapActions(paths.PersonalActions)
+	starterCommands := starter.CommandNames()
+	if len(starterCommands) > 0 {
+		fmt.Printf("Staghorn includes %d starter commands (code-review, debug, refactor, etc.)\n", len(starterCommands))
+		if promptYesNo("Install starter commands to your personal config?") {
+			result, err := InstallStarterCommands(paths.PersonalCommands, true)
 			if err != nil {
-				printWarning("Failed to install starter actions: %v", err)
-			} else if count > 0 {
-				printSuccess("Installed %d starter actions to %s", count, paths.PersonalActions)
-				fmt.Printf("  %s Run '%s' to see them\n", dim("Tip:"), info("staghorn actions"))
+				printWarning("Failed to install starter commands: %v", err)
+			} else if result.Aborted {
+				fmt.Println("  Skipped starter commands installation")
+			} else if len(result.Installed) > 0 {
+				printSuccess("Installed %d starter commands to %s", len(result.Installed), paths.PersonalCommands)
+				if len(result.Skipped) > 0 {
+					fmt.Printf("  Skipped %d (using team versions): %s\n", len(result.Skipped), strings.Join(result.Skipped, ", "))
+				}
+				fmt.Printf("  %s Run '%s' to see them\n", dim("Tip:"), info("staghorn commands"))
+			} else if len(result.Skipped) > 0 {
+				fmt.Printf("  Skipped %d commands (using team versions)\n", len(result.Skipped))
 			} else {
-				fmt.Println("  Starter actions already installed")
+				fmt.Println("  Starter commands already installed")
 			}
 		}
 	}
@@ -194,7 +201,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 	fmt.Println("Next steps:")
 	fmt.Printf("  %s    - add your personal preferences\n", info("staghorn edit"))
-	fmt.Printf("  %s - list available actions\n", info("staghorn actions"))
+	fmt.Printf("  %s - list available commands\n", info("staghorn commands"))
 	fmt.Println()
 	fmt.Println("Periodic updates:")
 	fmt.Printf("  %s              - fetch latest and apply\n", info("staghorn sync"))
