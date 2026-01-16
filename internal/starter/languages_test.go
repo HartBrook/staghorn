@@ -178,9 +178,13 @@ func TestBootstrapLanguagesSelective_ExistingFiles(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	// Pre-create python.md
-	os.MkdirAll(tmpDir, 0755)
+	if err := os.MkdirAll(tmpDir, 0755); err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
 	existingContent := "# My custom python config"
-	os.WriteFile(filepath.Join(tmpDir, "python.md"), []byte(existingContent), 0644)
+	if err := os.WriteFile(filepath.Join(tmpDir, "python.md"), []byte(existingContent), 0644); err != nil {
+		t.Fatalf("failed to write existing python.md: %v", err)
+	}
 
 	// Try to install python and go
 	selected := []string{"python", "go"}

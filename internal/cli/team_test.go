@@ -19,7 +19,7 @@ func TestTeamInitNonInteractive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get current dir: %v", err)
 	}
-	defer os.Chdir(origDir)
+	defer func() { _ = os.Chdir(origDir) }()
 
 	if err := os.Chdir(tmpDir); err != nil {
 		t.Fatalf("failed to change to temp dir: %v", err)
@@ -83,8 +83,10 @@ func TestTeamInitNoTemplates(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	origDir, _ := os.Getwd()
-	defer os.Chdir(origDir)
-	os.Chdir(tmpDir)
+	defer func() { _ = os.Chdir(origDir) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("failed to change to temp dir: %v", err)
+	}
 
 	// Run with --no-templates
 	err = runTeamInit(true, true, false)
@@ -106,8 +108,10 @@ func TestTeamInitNoReadme(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	origDir, _ := os.Getwd()
-	defer os.Chdir(origDir)
-	os.Chdir(tmpDir)
+	defer func() { _ = os.Chdir(origDir) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("failed to change to temp dir: %v", err)
+	}
 
 	// Run with --no-readme
 	err = runTeamInit(true, false, true)
@@ -129,8 +133,10 @@ func TestTeamValidate_ValidRepo(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	origDir, _ := os.Getwd()
-	defer os.Chdir(origDir)
-	os.Chdir(tmpDir)
+	defer func() { _ = os.Chdir(origDir) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("failed to change to temp dir: %v", err)
+	}
 
 	// Create a valid team repo
 	err = runTeamInit(true, false, false)
@@ -153,8 +159,10 @@ func TestTeamValidate_MissingClaudeMD(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	origDir, _ := os.Getwd()
-	defer os.Chdir(origDir)
-	os.Chdir(tmpDir)
+	defer func() { _ = os.Chdir(origDir) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("failed to change to temp dir: %v", err)
+	}
 
 	// Create empty directory - no CLAUDE.md
 	err = runTeamValidate()
@@ -171,15 +179,23 @@ func TestTeamValidate_InvalidCommand(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	origDir, _ := os.Getwd()
-	defer os.Chdir(origDir)
-	os.Chdir(tmpDir)
+	defer func() { _ = os.Chdir(origDir) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("failed to change to temp dir: %v", err)
+	}
 
 	// Create CLAUDE.md
-	os.WriteFile("CLAUDE.md", []byte("# Team Standards"), 0644)
+	if err := os.WriteFile("CLAUDE.md", []byte("# Team Standards"), 0644); err != nil {
+		t.Fatalf("failed to write CLAUDE.md: %v", err)
+	}
 
 	// Create commands directory with invalid command
-	os.MkdirAll("commands", 0755)
-	os.WriteFile(filepath.Join("commands", "broken.md"), []byte("No frontmatter here"), 0644)
+	if err := os.MkdirAll("commands", 0755); err != nil {
+		t.Fatalf("failed to create commands dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join("commands", "broken.md"), []byte("No frontmatter here"), 0644); err != nil {
+		t.Fatalf("failed to write broken.md: %v", err)
+	}
 
 	// Validate should fail
 	err = runTeamValidate()
@@ -196,8 +212,10 @@ func TestWriteTeamClaudeMD(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	origDir, _ := os.Getwd()
-	defer os.Chdir(origDir)
-	os.Chdir(tmpDir)
+	defer func() { _ = os.Chdir(origDir) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("failed to change to temp dir: %v", err)
+	}
 
 	err = writeTeamClaudeMD("Acme Corp", "Building the future")
 	if err != nil {
@@ -232,8 +250,10 @@ func TestWriteTeamReadme(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	origDir, _ := os.Getwd()
-	defer os.Chdir(origDir)
-	os.Chdir(tmpDir)
+	defer func() { _ = os.Chdir(origDir) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("failed to change to temp dir: %v", err)
+	}
 
 	commands := []string{"code-review", "debug"}
 	languages := []string{"go", "python"}
@@ -272,14 +292,20 @@ func TestTeamInitExistingFiles(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	origDir, _ := os.Getwd()
-	defer os.Chdir(origDir)
-	os.Chdir(tmpDir)
+	defer func() { _ = os.Chdir(origDir) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("failed to change to temp dir: %v", err)
+	}
 
 	// Create existing CLAUDE.md and README.md
 	existingClaudeContent := "# Existing CLAUDE.md content"
 	existingReadmeContent := "# Existing README content"
-	os.WriteFile("CLAUDE.md", []byte(existingClaudeContent), 0644)
-	os.WriteFile("README.md", []byte(existingReadmeContent), 0644)
+	if err := os.WriteFile("CLAUDE.md", []byte(existingClaudeContent), 0644); err != nil {
+		t.Fatalf("failed to write CLAUDE.md: %v", err)
+	}
+	if err := os.WriteFile("README.md", []byte(existingReadmeContent), 0644); err != nil {
+		t.Fatalf("failed to write README.md: %v", err)
+	}
 
 	// Run non-interactive (should keep existing files)
 	err = runTeamInit(true, false, false)
@@ -308,11 +334,15 @@ func TestTeamValidate_EmptyClaudeMD(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	origDir, _ := os.Getwd()
-	defer os.Chdir(origDir)
-	os.Chdir(tmpDir)
+	defer func() { _ = os.Chdir(origDir) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("failed to change to temp dir: %v", err)
+	}
 
 	// Create empty CLAUDE.md
-	os.WriteFile("CLAUDE.md", []byte(""), 0644)
+	if err := os.WriteFile("CLAUDE.md", []byte(""), 0644); err != nil {
+		t.Fatalf("failed to write CLAUDE.md: %v", err)
+	}
 
 	// Validate should fail
 	err = runTeamValidate()
@@ -329,15 +359,23 @@ func TestTeamValidate_EmptyLanguageFile(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	origDir, _ := os.Getwd()
-	defer os.Chdir(origDir)
-	os.Chdir(tmpDir)
+	defer func() { _ = os.Chdir(origDir) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("failed to change to temp dir: %v", err)
+	}
 
 	// Create valid CLAUDE.md
-	os.WriteFile("CLAUDE.md", []byte("# Team Standards"), 0644)
+	if err := os.WriteFile("CLAUDE.md", []byte("# Team Standards"), 0644); err != nil {
+		t.Fatalf("failed to write CLAUDE.md: %v", err)
+	}
 
 	// Create languages directory with empty file
-	os.MkdirAll("languages", 0755)
-	os.WriteFile(filepath.Join("languages", "empty.md"), []byte(""), 0644)
+	if err := os.MkdirAll("languages", 0755); err != nil {
+		t.Fatalf("failed to create languages dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join("languages", "empty.md"), []byte(""), 0644); err != nil {
+		t.Fatalf("failed to write empty.md: %v", err)
+	}
 
 	// Validate should fail
 	err = runTeamValidate()
@@ -354,15 +392,23 @@ func TestTeamValidate_EmptyTemplateFile(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	origDir, _ := os.Getwd()
-	defer os.Chdir(origDir)
-	os.Chdir(tmpDir)
+	defer func() { _ = os.Chdir(origDir) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("failed to change to temp dir: %v", err)
+	}
 
 	// Create valid CLAUDE.md
-	os.WriteFile("CLAUDE.md", []byte("# Team Standards"), 0644)
+	if err := os.WriteFile("CLAUDE.md", []byte("# Team Standards"), 0644); err != nil {
+		t.Fatalf("failed to write CLAUDE.md: %v", err)
+	}
 
 	// Create templates directory with empty file
-	os.MkdirAll("templates", 0755)
-	os.WriteFile(filepath.Join("templates", "empty.md"), []byte(""), 0644)
+	if err := os.MkdirAll("templates", 0755); err != nil {
+		t.Fatalf("failed to create templates dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join("templates", "empty.md"), []byte(""), 0644); err != nil {
+		t.Fatalf("failed to write empty.md: %v", err)
+	}
 
 	// Validate should fail
 	err = runTeamValidate()
@@ -379,8 +425,10 @@ func TestWriteTeamClaudeMD_EmptyDescription(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	origDir, _ := os.Getwd()
-	defer os.Chdir(origDir)
-	os.Chdir(tmpDir)
+	defer func() { _ = os.Chdir(origDir) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("failed to change to temp dir: %v", err)
+	}
 
 	// Empty description should use default
 	err = writeTeamClaudeMD("Acme Corp", "")
@@ -407,8 +455,10 @@ func TestWriteTeamReadme_EmptyLists(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	origDir, _ := os.Getwd()
-	defer os.Chdir(origDir)
-	os.Chdir(tmpDir)
+	defer func() { _ = os.Chdir(origDir) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("failed to change to temp dir: %v", err)
+	}
 
 	// Empty commands and languages
 	err = writeTeamReadme("Acme Corp", nil, nil)
