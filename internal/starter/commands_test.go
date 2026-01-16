@@ -187,3 +187,74 @@ func TestLoadStarterCommands(t *testing.T) {
 		}
 	}
 }
+
+func TestBootstrapCommandsSelective(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "staghorn-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Install only specific commands
+	selected := []string{"code-review", "debug"}
+	count, installed, err := BootstrapCommandsSelective(tmpDir, selected)
+	if err != nil {
+		t.Fatalf("BootstrapCommandsSelective failed: %v", err)
+	}
+
+	if count != len(selected) {
+		t.Errorf("expected %d commands, got %d", len(selected), count)
+	}
+
+	if len(installed) != count {
+		t.Errorf("installed list length %d doesn't match count %d", len(installed), count)
+	}
+
+	// Verify only selected files exist
+	for _, name := range selected {
+		path := filepath.Join(tmpDir, name+".md")
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("expected %s to exist", name)
+		}
+	}
+
+	// Verify unselected files don't exist
+	allNames := CommandNames()
+	for _, name := range allNames {
+		isSelected := false
+		for _, sel := range selected {
+			if name == sel {
+				isSelected = true
+				break
+			}
+		}
+		if !isSelected {
+			path := filepath.Join(tmpDir, name+".md")
+			if _, err := os.Stat(path); err == nil {
+				t.Errorf("expected %s to not exist (not selected)", name)
+			}
+		}
+	}
+}
+
+func TestBootstrapCommandsSelective_EmptyList(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "staghorn-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Install with empty list should install nothing
+	count, installed, err := BootstrapCommandsSelective(tmpDir, nil)
+	if err != nil {
+		t.Fatalf("BootstrapCommandsSelective failed: %v", err)
+	}
+
+	if count != 0 {
+		t.Errorf("expected 0 commands with empty list, got %d", count)
+	}
+
+	if len(installed) != 0 {
+		t.Errorf("expected empty installed list, got %d items", len(installed))
+	}
+}

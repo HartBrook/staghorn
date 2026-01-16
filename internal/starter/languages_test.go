@@ -99,6 +99,122 @@ func TestBootstrapLanguages(t *testing.T) {
 	}
 }
 
+func TestBootstrapLanguagesSelective(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "staghorn-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Install only specific languages
+	selected := []string{"python", "go"}
+	count, installed, err := BootstrapLanguagesSelective(tmpDir, selected)
+	if err != nil {
+		t.Fatalf("BootstrapLanguagesSelective failed: %v", err)
+	}
+
+	if count != len(selected) {
+		t.Errorf("expected %d languages, got %d", len(selected), count)
+	}
+
+	if len(installed) != count {
+		t.Errorf("installed list length %d doesn't match count %d", len(installed), count)
+	}
+
+	// Verify only selected files exist
+	for _, name := range selected {
+		path := filepath.Join(tmpDir, name+".md")
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("expected %s to exist", name)
+		}
+	}
+
+	// Verify unselected files don't exist
+	allNames := LanguageNames()
+	for _, name := range allNames {
+		isSelected := false
+		for _, sel := range selected {
+			if name == sel {
+				isSelected = true
+				break
+			}
+		}
+		if !isSelected {
+			path := filepath.Join(tmpDir, name+".md")
+			if _, err := os.Stat(path); err == nil {
+				t.Errorf("expected %s to not exist (not selected)", name)
+			}
+		}
+	}
+}
+
+func TestBootstrapLanguagesSelective_EmptyList(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "staghorn-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Install with empty list should install nothing
+	count, installed, err := BootstrapLanguagesSelective(tmpDir, nil)
+	if err != nil {
+		t.Fatalf("BootstrapLanguagesSelective failed: %v", err)
+	}
+
+	if count != 0 {
+		t.Errorf("expected 0 languages with empty list, got %d", count)
+	}
+
+	if len(installed) != 0 {
+		t.Errorf("expected empty installed list, got %d items", len(installed))
+	}
+}
+
+func TestBootstrapLanguagesSelective_ExistingFiles(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "staghorn-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Pre-create python.md
+	if err := os.MkdirAll(tmpDir, 0755); err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	existingContent := "# My custom python config"
+	if err := os.WriteFile(filepath.Join(tmpDir, "python.md"), []byte(existingContent), 0644); err != nil {
+		t.Fatalf("failed to write existing python.md: %v", err)
+	}
+
+	// Try to install python and go
+	selected := []string{"python", "go"}
+	count, installed, err := BootstrapLanguagesSelective(tmpDir, selected)
+	if err != nil {
+		t.Fatalf("BootstrapLanguagesSelective failed: %v", err)
+	}
+
+	// Should only install go (python already exists)
+	if count != 1 {
+		t.Errorf("expected 1 language installed, got %d", count)
+	}
+
+	// Verify python.md was NOT overwritten
+	content, _ := os.ReadFile(filepath.Join(tmpDir, "python.md"))
+	if string(content) != existingContent {
+		t.Error("existing python.md should not be overwritten")
+	}
+
+	// Verify go.md was installed
+	if _, err := os.Stat(filepath.Join(tmpDir, "go.md")); err != nil {
+		t.Error("go.md should have been installed")
+	}
+
+	// Verify installed list only contains go
+	if len(installed) != 1 || installed[0] != "go" {
+		t.Errorf("expected installed list to be [go], got %v", installed)
+	}
+}
+
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsHelper(s, substr))
 }

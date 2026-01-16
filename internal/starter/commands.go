@@ -97,6 +97,65 @@ func BootstrapCommandsWithSkip(targetDir string, skip []string) (int, []string, 
 	return copied, installed, nil
 }
 
+// BootstrapCommandsSelective copies only the specified starter commands to the target directory.
+// It skips files that already exist. Returns the count and names of installed commands.
+func BootstrapCommandsSelective(targetDir string, names []string) (int, []string, error) {
+	if err := os.MkdirAll(targetDir, 0755); err != nil {
+		return 0, nil, fmt.Errorf("failed to create commands directory: %w", err)
+	}
+
+	// Build set of requested names
+	requested := make(map[string]bool)
+	for _, name := range names {
+		requested[name] = true
+	}
+
+	entries, err := commandsFS.ReadDir("commands")
+	if err != nil {
+		return 0, nil, fmt.Errorf("failed to read embedded commands: %w", err)
+	}
+
+	copied := 0
+	var installed []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		// Get command name (strip .md extension)
+		name := entry.Name()
+		if filepath.Ext(name) == ".md" {
+			name = name[:len(name)-3]
+		}
+
+		// Skip if not in requested list
+		if !requested[name] {
+			continue
+		}
+
+		targetPath := filepath.Join(targetDir, entry.Name())
+
+		// Skip if file already exists
+		if _, err := os.Stat(targetPath); err == nil {
+			continue
+		}
+
+		content, err := commandsFS.ReadFile(filepath.Join("commands", entry.Name()))
+		if err != nil {
+			return copied, installed, fmt.Errorf("failed to read %s: %w", entry.Name(), err)
+		}
+
+		if err := os.WriteFile(targetPath, content, 0644); err != nil {
+			return copied, installed, fmt.Errorf("failed to write %s: %w", entry.Name(), err)
+		}
+
+		copied++
+		installed = append(installed, name)
+	}
+
+	return copied, installed, nil
+}
+
 // GetCommand returns the content of a starter command by name.
 func GetCommand(name string) ([]byte, error) {
 	return commandsFS.ReadFile(filepath.Join("commands", name+".md"))
