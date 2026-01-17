@@ -118,7 +118,7 @@ func runLanguages(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	owner, repo, err := cfg.Team.ParseRepo()
+	owner, repo, err := cfg.DefaultOwnerRepo()
 	if err != nil {
 		return err
 	}

@@ -272,7 +272,7 @@ func findTeamCollisions(starterNames []string) []string {
 	if config.Exists() {
 		cfg, err := config.Load()
 		if err == nil {
-			owner, repo, err := cfg.Team.ParseRepo()
+			owner, repo, err := cfg.DefaultOwnerRepo()
 			if err == nil {
 				teamCommandsDir = paths.TeamCommandsDir(owner, repo)
 			}
@@ -519,7 +519,7 @@ func loadCommandRegistry() (*commands.Registry, error) {
 	if config.Exists() {
 		cfg, err := config.Load()
 		if err == nil {
-			owner, repo, err := cfg.Team.ParseRepo()
+			owner, repo, err := cfg.DefaultOwnerRepo()
 			if err == nil {
 				teamCommandsDir = paths.TeamCommandsDir(owner, repo)
 			}

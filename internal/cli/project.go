@@ -147,7 +147,7 @@ func offerTemplateSelection() string {
 		return ""
 	}
 
-	owner, repo, err := cfg.Team.ParseRepo()
+	owner, repo, err := cfg.DefaultOwnerRepo()
 	if err != nil {
 		return ""
 	}
@@ -208,7 +208,7 @@ func loadTemplate(name string) (string, error) {
 		return "", err
 	}
 
-	owner, repo, err := cfg.Team.ParseRepo()
+	owner, repo, err := cfg.DefaultOwnerRepo()
 	if err != nil {
 		return "", err
 	}
@@ -427,7 +427,7 @@ func runProjectTemplates() error {
 		return err
 	}
 
-	owner, repo, err := cfg.Team.ParseRepo()
+	owner, repo, err := cfg.DefaultOwnerRepo()
 	if err != nil {
 		return err
 	}

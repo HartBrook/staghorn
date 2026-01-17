@@ -70,7 +70,7 @@ func runSync(ctx context.Context, opts *syncOptions) error {
 		return err
 	}
 
-	owner, repo, err := cfg.Team.ParseRepo()
+	owner, repo, err := cfg.DefaultOwnerRepo()
 	if err != nil {
 		return err
 	}
@@ -123,20 +123,17 @@ func runSync(ctx context.Context, opts *syncOptions) error {
 		}
 	}
 
-	// Determine branch
-	branch := cfg.Team.Branch
-	if branch == "" {
-		branch, err = client.GetDefaultBranch(ctx, owner, repo)
-		if err != nil {
-			return errors.GitHubFetchFailed(owner+"/"+repo, err)
-		}
+	// Determine branch (use default branch from repo)
+	branch, err := client.GetDefaultBranch(ctx, owner, repo)
+	if err != nil {
+		return errors.GitHubFetchFailed(owner+"/"+repo, err)
 	}
 
 	fmt.Printf("Fetching %s/%s...\n", owner, repo)
 
 	// Sync config unless --commands-only, --languages-only, or --claude-only was specified
 	if !opts.commandsOnly && !opts.languagesOnly && !opts.claudeOnly {
-		result, err := client.FetchFile(ctx, owner, repo, cfg.Team.Path, branch)
+		result, err := client.FetchFile(ctx, owner, repo, config.DefaultPath, branch)
 		if err != nil {
 			return errors.GitHubFetchFailed(owner+"/"+repo, err)
 		}
@@ -154,7 +151,7 @@ func runSync(ctx context.Context, opts *syncOptions) error {
 		}
 
 		printSuccess("Synced config")
-		printInfo("File", cfg.Team.Path)
+		printInfo("File", config.DefaultPath)
 		printInfo("SHA", result.SHA[:8])
 	}
 
@@ -454,7 +451,7 @@ func applyConfig(cfg *config.Config, paths *config.Paths, owner, repo string) er
 	merged := merge.MergeWithLanguages(layers, mergeOpts)
 
 	// Add header comment
-	header := fmt.Sprintf("<!-- Managed by staghorn | Team: %s | Do not edit directly -->\n\n", cfg.Team.Repo)
+	header := fmt.Sprintf("<!-- Managed by staghorn | Source: %s | Do not edit directly -->\n\n", cfg.SourceRepo())
 	output := header + merged
 
 	// Ensure ~/.claude directory exists
@@ -463,12 +460,35 @@ func applyConfig(cfg *config.Config, paths *config.Paths, owner, repo string) er
 		return fmt.Errorf("failed to create ~/.claude directory: %w", err)
 	}
 
-	// Check for existing unmanaged content
+	// Check for existing content that needs backup/migration
 	outputPath := filepath.Join(claudeDir, "CLAUDE.md")
 	if existingContent, err := os.ReadFile(outputPath); err == nil {
-		// File exists - check if it's managed by staghorn
-		if !strings.Contains(string(existingContent), "Managed by staghorn") {
-			printWarning("Found existing ~/.claude/CLAUDE.md not managed by staghorn")
+		existingStr := string(existingContent)
+		needsPrompt := false
+		promptReason := ""
+
+		if !strings.Contains(existingStr, "Managed by staghorn") {
+			// File exists but isn't managed by staghorn
+			needsPrompt = true
+			promptReason = "Found existing ~/.claude/CLAUDE.md not managed by staghorn"
+		} else {
+			// File is managed by staghorn - check if switching sources
+			currentSource := cfg.SourceRepo()
+			// Extract previous source from header: "<!-- Managed by staghorn | Source: owner/repo |"
+			if idx := strings.Index(existingStr, "Source: "); idx != -1 {
+				end := strings.Index(existingStr[idx:], " |")
+				if end != -1 {
+					previousSource := existingStr[idx+8 : idx+end]
+					if previousSource != currentSource {
+						needsPrompt = true
+						promptReason = fmt.Sprintf("Switching source from %s to %s", previousSource, currentSource)
+					}
+				}
+			}
+		}
+
+		if needsPrompt {
+			printWarning("%s", promptReason)
 			fmt.Println()
 			fmt.Println("Options:")
 			fmt.Println("  1. Migrate content to personal config (recommended)")
@@ -480,13 +500,21 @@ func applyConfig(cfg *config.Config, paths *config.Paths, owner, repo string) er
 
 			switch choice {
 			case "1", "":
-				// Migrate to personal config
+				// Migrate to personal config - strip the staghorn header first if present
+				contentToMigrate := existingStr
+				if strings.Contains(existingStr, "Managed by staghorn") {
+					// Find end of header line and skip it
+					if idx := strings.Index(existingStr, "-->\n"); idx != -1 {
+						contentToMigrate = strings.TrimLeft(existingStr[idx+4:], "\n")
+					}
+				}
+
 				existingPersonal, _ := os.ReadFile(paths.PersonalMD)
 				newPersonal := string(existingPersonal)
 				if len(newPersonal) > 0 {
 					newPersonal += "\n\n"
 				}
-				newPersonal += "<!-- [staghorn] Migrated from ~/.claude/CLAUDE.md -->\n\n" + string(existingContent)
+				newPersonal += "<!-- [staghorn] Migrated from ~/.claude/CLAUDE.md -->\n\n" + contentToMigrate
 
 				if err := os.MkdirAll(paths.ConfigDir, 0755); err != nil {
 					return fmt.Errorf("failed to create config directory: %w", err)

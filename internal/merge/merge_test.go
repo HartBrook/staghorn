@@ -205,7 +205,7 @@ func TestMergeWithSources(t *testing.T) {
 
 	opts := MergeOptions{
 		AnnotateSources: true,
-		TeamRepo:        "acme/standards",
+		SourceRepo:      "acme/standards",
 	}
 
 	result := Merge(layers, opts)
@@ -214,7 +214,7 @@ func TestMergeWithSources(t *testing.T) {
 		t.Error("Merge() with AnnotateSources should include generation comment")
 	}
 	if !strings.Contains(result, "acme/standards") {
-		t.Error("Merge() with TeamRepo should include repo name")
+		t.Error("Merge() with SourceRepo should include repo name")
 	}
 }
 

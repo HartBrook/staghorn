@@ -71,7 +71,7 @@ func showContent(opts *infoOptions) error {
 		return err
 	}
 
-	owner, repo, err := cfg.Team.ParseRepo()
+	owner, repo, err := cfg.DefaultOwnerRepo()
 	if err != nil {
 		return err
 	}
@@ -168,7 +168,7 @@ func showContent(opts *infoOptions) error {
 	// Merge and output
 	mergeOpts := merge.MergeOptions{
 		AnnotateSources: opts.sources,
-		TeamRepo:        fmt.Sprintf("%s/%s", owner, repo),
+		SourceRepo:      fmt.Sprintf("%s/%s", owner, repo),
 		Languages:       activeLanguages,
 		LanguageFiles:   languageFiles,
 	}
@@ -197,7 +197,7 @@ func showStatus(verbose bool) error {
 		return err
 	}
 
-	owner, repo, err := cfg.Team.ParseRepo()
+	owner, repo, err := cfg.DefaultOwnerRepo()
 	if err != nil {
 		return err
 	}
@@ -215,14 +215,14 @@ func showCompactStatus(cfg *config.Config, paths *config.Paths, owner, repo stri
 	c := cache.New(paths)
 
 	// Team status
-	teamStatus := warning("not synced")
+	sourceStatus := warning("not synced")
 	if c.Exists(owner, repo) {
 		meta, err := c.GetMetadata(owner, repo)
 		if err == nil {
 			if meta.IsStale(cfg.Cache.TTLDuration()) {
-				teamStatus = fmt.Sprintf("%s %s", meta.Age(), warning("(stale)"))
+				sourceStatus = fmt.Sprintf("%s %s", meta.Age(), warning("(stale)"))
 			} else {
-				teamStatus = success(meta.Age())
+				sourceStatus = success(meta.Age())
 			}
 		}
 	}
@@ -258,7 +258,7 @@ func showCompactStatus(cfg *config.Config, paths *config.Paths, owner, repo stri
 	}
 
 	// Output
-	fmt.Printf("  %s: %s/%s (%s)\n", dim("Team"), owner, repo, teamStatus)
+	fmt.Printf("  %s: %s/%s (%s)\n", dim("Source"), owner, repo, sourceStatus)
 	fmt.Printf("  %s: %s\n", dim("Personal"), personalStatus)
 	fmt.Printf("  %s: %s\n", dim("Project"), projectStatus)
 	fmt.Printf("  %s: %s\n", dim("Languages"), langStatus)
@@ -267,12 +267,9 @@ func showCompactStatus(cfg *config.Config, paths *config.Paths, owner, repo stri
 }
 
 func showVerboseStatus(cfg *config.Config, paths *config.Paths, owner, repo string) error {
-	fmt.Println("Team config:")
+	fmt.Println("Source config:")
 	printInfo("Repository", fmt.Sprintf("%s/%s", owner, repo))
-	if cfg.Team.Branch != "" {
-		printInfo("Branch", cfg.Team.Branch)
-	}
-	printInfo("Path", cfg.Team.Path)
+	printInfo("Path", config.DefaultPath)
 
 	// Cache status
 	c := cache.New(paths)
