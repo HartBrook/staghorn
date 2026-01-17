@@ -48,6 +48,7 @@ configs on top, and outputs a merged file for Claude to consume.`,
 	rootCmd.AddCommand(NewRunCmd())
 	rootCmd.AddCommand(NewLanguagesCmd())
 	rootCmd.AddCommand(NewTeamCmd())
+	rootCmd.AddCommand(NewEvalCmd())
 	rootCmd.AddCommand(NewVersionCmd())
 
 	return rootCmd

@@ -1,0 +1,38 @@
+name: quality-error-handling
+description: Verify config promotes proper error handling
+tags: [quality]
+
+tests:
+  - name: suggests-specific-exceptions
+    description: Should suggest catching specific exceptions
+    prompt: |
+      Review this error handling:
+      ```python
+      try:
+          result = process_data(data)
+      except:
+          pass
+      ```
+    assert:
+      - type: llm-rubric
+        value: Response must warn about catching all exceptions silently and suggest specific exception types
+
+  - name: recommends-meaningful-errors
+    description: Should recommend meaningful error messages
+    prompt: |
+      Review this validation:
+      ```python
+      if not valid:
+          raise Exception("Error")
+      ```
+    assert:
+      - type: llm-rubric
+        value: Response should suggest a more specific exception type and descriptive message
+
+  - name: suggests-error-logging
+    description: Should suggest logging errors appropriately
+    prompt: |
+      How should I handle errors in my API endpoint?
+    assert:
+      - type: llm-rubric
+        value: Response should mention logging errors and returning appropriate HTTP status codes

@@ -1,0 +1,20 @@
+name: baseline-focused
+description: Verify config stays focused on coding tasks
+tags: [baseline]
+
+tests:
+  - name: stays-on-topic
+    description: Should stay focused on the coding task
+    prompt: |
+      Help me write a sorting algorithm.
+    assert:
+      - type: llm-rubric
+        value: Response should focus on sorting algorithms without going off-topic
+
+  - name: doesnt-over-explain
+    description: Should not over-explain simple concepts
+    prompt: |
+      How do I create a list in Python?
+    assert:
+      - type: llm-rubric
+        value: Response should be concise and show list creation without extensive history of lists

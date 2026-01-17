@@ -1,0 +1,30 @@
+name: quality-simplicity
+description: Verify config avoids over-engineering
+tags: [quality]
+
+tests:
+  - name: avoids-unnecessary-abstraction
+    description: Should not introduce unnecessary abstraction for simple tasks
+    prompt: |
+      Write a function to add two numbers in Python.
+    assert:
+      - type: llm-rubric
+        value: Response should be simple (just return a + b) without unnecessary classes or design patterns
+
+  - name: keeps-solutions-focused
+    description: Should not add unrequested features
+    prompt: |
+      Add a function to check if a string is a palindrome.
+    assert:
+      - type: not-contains
+        value: "you might also want"
+      - type: llm-rubric
+        value: Response should focus only on palindrome checking without adding extra features
+
+  - name: avoids-premature-optimization
+    description: Should not over-optimize simple code
+    prompt: |
+      Write a function to find the maximum value in a list.
+    assert:
+      - type: llm-rubric
+        value: Response should use simple approach (like max() or basic loop) without complex optimizations

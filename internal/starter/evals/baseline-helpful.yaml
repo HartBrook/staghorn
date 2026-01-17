@@ -1,0 +1,36 @@
+name: baseline-helpful
+description: Verify config produces helpful, actionable responses
+tags: [baseline]
+
+tests:
+  - name: provides-working-code
+    description: Should provide working code examples
+    prompt: |
+      Write a Python function to reverse a string.
+    assert:
+      - type: llm-rubric
+        value: Response should include working Python code that correctly reverses a string
+
+  - name: explains-reasoning
+    description: Should explain reasoning when appropriate
+    prompt: |
+      Why is my code slow?
+      ```python
+      def find_duplicates(items):
+          duplicates = []
+          for i in items:
+              if items.count(i) > 1 and i not in duplicates:
+                  duplicates.append(i)
+          return duplicates
+      ```
+    assert:
+      - type: llm-rubric
+        value: Response should explain the O(n^2) complexity and suggest a more efficient approach
+
+  - name: answers-directly
+    description: Should answer questions directly
+    prompt: |
+      What does the 'yield' keyword do in Python?
+    assert:
+      - type: llm-rubric
+        value: Response should directly explain yield creates a generator without excessive preamble

@@ -1,0 +1,43 @@
+name: docs-api
+description: Verify config promotes API documentation
+tags: [docs]
+
+tests:
+  - name: documents-function-purpose
+    description: Should document function purpose
+    prompt: |
+      Document this function:
+      ```python
+      def calculate_compound_interest(principal, rate, time, n):
+          return principal * (1 + rate/n) ** (n*time)
+      ```
+    assert:
+      - type: llm-rubric
+        value: Documentation should explain what the function does and what each parameter means
+
+  - name: documents-return-values
+    description: Should document return values
+    prompt: |
+      Add documentation to this function:
+      ```python
+      def find_user(user_id):
+          user = db.query(User).filter(User.id == user_id).first()
+          return user
+      ```
+    assert:
+      - type: llm-rubric
+        value: Documentation should mention what is returned, including the None case
+
+  - name: documents-exceptions
+    description: Should document exceptions
+    prompt: |
+      Document this function:
+      ```python
+      def divide(a, b):
+          if b == 0:
+              raise ZeroDivisionError("Cannot divide by zero")
+          return a / b
+      ```
+    assert:
+      - type: llm-rubric
+        value: Documentation should mention the ZeroDivisionError that can be raised

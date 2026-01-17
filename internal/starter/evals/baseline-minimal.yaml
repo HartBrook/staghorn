@@ -1,0 +1,32 @@
+name: baseline-minimal
+description: Verify config avoids adding unnecessary features
+tags: [baseline]
+
+tests:
+  - name: doesnt-add-unrequested-features
+    description: Should not add features not asked for
+    prompt: |
+      Write a function to calculate the area of a rectangle given width and height.
+    assert:
+      - type: llm-rubric
+        value: Response should just calculate area (width * height) without adding volume, perimeter, or other unrequested features
+
+  - name: doesnt-over-abstract
+    description: Should not create unnecessary abstractions
+    prompt: |
+      Write code to print "Hello, World!" in Python.
+    assert:
+      - type: llm-rubric
+        value: Response should be simple print statement without creating classes or complex structures
+
+  - name: respects-scope
+    description: Should respect the scope of the request
+    prompt: |
+      Fix the typo in this code:
+      ```python
+      def greet(nmae):
+          print(f"Hello, {nmae}")
+      ```
+    assert:
+      - type: llm-rubric
+        value: Response should only fix the typo (nmae -> name) without refactoring the entire function

@@ -1,10 +1,10 @@
 # Staghorn
 
-Sync Claude Code configs from GitHub — for teams, communities, or just yourself.
+Sync Claude Code configs from GitHub — for teams, communities, or across your personal projects. Run evals to verify your guidelines actually work.
 
 ## Why Staghorn?
 
-**For teams:** Your engineering standards live in one GitHub repo. Everyone syncs from it. When standards change, one PR updates the whole team.
+**For teams:** Your engineering standards live in one GitHub repo. Everyone syncs from it. When standards change, one PR updates the whole team. **Run evals to verify Claude actually follows your guidelines.**
 
 **For individuals:** Browse community configs to jumpstart your setup, or keep your personal config in a repo and sync it across all your machines.
 
@@ -28,6 +28,74 @@ Choose how you want to get started:
 3. **Start fresh** — Just use the built-in starter commands
 
 Then run `stag sync` periodically to stay up to date.
+
+## Behavioral Evals
+
+Test that your CLAUDE.md config actually produces the behavior you want. Evals live in your source repo alongside your config, so they stay in sync with your guidelines.
+
+**Prerequisites:**
+
+```bash
+# Install Promptfoo (evals run on Promptfoo under the hood)
+npm install -g promptfoo
+
+# Set your Anthropic API key
+export ANTHROPIC_API_KEY=sk-ant-...
+```
+
+> **Note:** Running evals makes real API calls to Claude and will consume credits. Each test case is one API call.
+
+```bash
+# Run evals from your source repo
+stag eval
+
+# Run specific evals
+stag eval security-secrets
+stag eval --tag security
+
+# Run a specific test within an eval
+stag eval lang-python --test uses-type-hints
+
+# Run tests matching a prefix pattern
+stag eval --test "uses-*"
+
+# Preview what would run (no API calls)
+stag eval --dry-run
+```
+
+Evals use [Promptfoo](https://promptfoo.dev) under the hood. Perfect for CI/CD:
+
+```bash
+# JSON output for CI
+stag eval --output json
+
+# GitHub Actions annotations
+stag eval --output github
+
+# Test specific config layers
+stag eval --layer team
+```
+
+### Starter Evals
+
+Staghorn includes 25 starter evals you can install as a starting point:
+
+```bash
+stag eval init                 # Install to personal evals
+stag eval init --project       # Install to project evals
+```
+
+| Category          | Evals                                                                                   |
+| ----------------- | --------------------------------------------------------------------------------------- |
+| **Security**      | Secrets detection, injection prevention, auth patterns, OWASP Top 10, input validation  |
+| **Code Quality**  | Clarity, simplicity, naming, error handling                                             |
+| **Code Review**   | Bug detection, test coverage, performance, maintainability                              |
+| **Documentation** | API docs, code comments                                                                 |
+| **Git**           | Commit messages, sensitive file handling                                                |
+| **Language**      | Python, Go, TypeScript, Rust best practices                                             |
+| **Baseline**      | Helpfulness, focus, honesty, minimal responses                                          |
+
+See [Creating Evals](#creating-evals) for writing custom evals, or the [Evals Guide](EVALS_GUIDE.md) for in-depth debugging and best practices.
 
 ## Finding Configs
 
@@ -69,26 +137,29 @@ Your personal additions           ─┘
 Project config (.staghorn/)       ─► ./CLAUDE.md
 ```
 
-The layering means you get shared standards *plus* your personal style. You never edit the output files directly — Staghorn manages them.
+The layering means you get shared standards _plus_ your personal style. You never edit the output files directly — Staghorn manages them.
 
 **Advanced:** You can pull different parts of your config from different sources — team standards for your base config, community best practices for specific languages. See [Multi-Source Configuration](#multi-source-configuration).
 
 ## Commands
 
-| Command              | Description                                        |
-| -------------------- | -------------------------------------------------- |
-| `stag init`          | Set up staghorn (browse configs or connect repo)   |
-| `stag sync`          | Fetch latest config from GitHub and apply          |
-| `stag search`        | Search for community configs                       |
-| `stag edit`          | Edit personal config (auto-applies on save)        |
-| `stag edit -l <lang>`| Edit personal language config (e.g., `-l python`)  |
-| `stag info`          | Show current config state                          |
-| `stag languages`     | Show detected and configured languages             |
-| `stag commands`      | List available commands                            |
-| `stag run <command>` | Run a command (outputs prompt to stdout)           |
-| `stag project`       | Manage project-level config                        |
-| `stag team`          | Bootstrap or validate a team standards repo        |
-| `stag version`       | Print version number                               |
+| Command               | Description                                       |
+| --------------------- | ------------------------------------------------- |
+| `stag init`           | Set up staghorn (browse configs or connect repo)  |
+| `stag sync`           | Fetch latest config from GitHub and apply         |
+| `stag search`         | Search for community configs                      |
+| `stag edit`           | Edit personal config (auto-applies on save)       |
+| `stag edit -l <lang>` | Edit personal language config (e.g., `-l python`) |
+| `stag info`           | Show current config state                         |
+| `stag languages`      | Show detected and configured languages            |
+| `stag commands`       | List available commands                           |
+| `stag run <command>`  | Run a command (outputs prompt to stdout)          |
+| `stag eval`           | Run behavioral evals against your config          |
+| `stag eval init`      | Install starter evals                             |
+| `stag eval list`      | List available evals                              |
+| `stag project`        | Manage project-level config                       |
+| `stag team`           | Bootstrap or validate a team standards repo       |
+| `stag version`        | Print version number                              |
 
 ### Typical Workflow
 
@@ -151,18 +222,18 @@ The source file is `.staghorn/project.md` — both it and `./CLAUDE.md` should b
 
 Commands are reusable prompts for common workflows. Staghorn includes 10 starter commands:
 
-| Command | Description |
-|--------|-------------|
-| `code-review` | Thorough code review with checklist |
-| `security-audit` | Scan for vulnerabilities |
-| `pr-prep` | Prepare PR description |
-| `explain` | Explain code in plain English |
-| `refactor` | Suggest refactoring improvements |
-| `test-gen` | Generate unit tests |
-| `debug` | Help diagnose a bug |
-| `doc-gen` | Generate documentation |
-| `migrate` | Help migrate code |
-| `api-design` | Design API interfaces |
+| Command          | Description                         |
+| ---------------- | ----------------------------------- |
+| `code-review`    | Thorough code review with checklist |
+| `security-audit` | Scan for vulnerabilities            |
+| `pr-prep`        | Prepare PR description              |
+| `explain`        | Explain code in plain English       |
+| `refactor`       | Suggest refactoring improvements    |
+| `test-gen`       | Generate unit tests                 |
+| `debug`          | Help diagnose a bug                 |
+| `doc-gen`        | Generate documentation              |
+| `migrate`        | Help migrate code                   |
+| `api-design`     | Design API interfaces               |
 
 ```bash
 # List available commands
@@ -200,6 +271,7 @@ stag team init
 ```
 
 This creates:
+
 - A starter `CLAUDE.md` with common guidelines
 - Optional commands, language configs, and project templates
 - A README explaining the repo structure
@@ -211,21 +283,26 @@ Push to GitHub and share the URL with your team.
 For your config to appear in `stag search`, add GitHub topics to your repository:
 
 **Required:**
+
 - `staghorn-config` — Makes your repo discoverable via `stag search`
 
 **Language topics** (for `--lang` filtering):
+
 - Add topics like `python`, `go`, `typescript`, `rust`, `java`, `ruby`
 - Users can search with aliases: `golang` → `go`, `py` → `python`, `ts` → `typescript`
 
 **Custom tags** (for `--tag` filtering):
+
 - Add any topics you want: `security`, `web`, `ai`, `backend`, etc.
 
 Example: A Python security-focused config should have topics:
+
 ```
 staghorn-config, python, security
 ```
 
 Then users can find it with:
+
 ```bash
 stag search --lang python --tag security
 stag search --lang py  # aliases work too
@@ -242,6 +319,9 @@ your-org/claude-standards/
 ├── languages/          # Language-specific configs (optional)
 │   ├── python.md
 │   └── go.md
+├── evals/              # Behavioral tests (optional)
+│   ├── security-secrets.yaml
+│   └── code-quality.yaml
 └── templates/          # Project templates (optional)
     └── backend-service.md
 ```
@@ -275,8 +355,8 @@ When installing from a new source, Staghorn shows a warning for untrusted repos.
 ```yaml
 # ~/.config/staghorn/config.yaml
 trusted:
-  - acme-corp              # Trust all repos from this org
-  - community/python-config  # Trust a specific repo
+  - acme-corp # Trust all repos from this org
+  - community/python-config # Trust a specific repo
 ```
 
 Private repos auto-trust their org during `stag init`.
@@ -288,12 +368,12 @@ Pull different parts of your config from different repositories:
 ```yaml
 # ~/.config/staghorn/config.yaml
 source:
-  default: my-company/standards       # Base standards from your team
+  default: my-company/standards # Base standards from your team
   languages:
-    python: community/python-standards  # Community Python config
-    go: my-company/go-standards         # Team-specific Go config
+    python: community/python-standards # Community Python config
+    go: my-company/go-standards # Team-specific Go config
   commands:
-    security-audit: security-team/audits  # Commands from another team
+    security-audit: security-team/audits # Commands from another team
 ```
 
 This is useful when you want team standards for some things, but community best practices for specific languages.
@@ -332,18 +412,18 @@ languages:
 
 ### Supported Languages
 
-| Language   | Marker Files                                    |
-| ---------- | ----------------------------------------------- |
+| Language   | Marker Files                                                |
+| ---------- | ----------------------------------------------------------- |
 | Python     | `pyproject.toml`, `setup.py`, `requirements.txt`, `Pipfile` |
-| Go         | `go.mod`                                        |
-| TypeScript | `tsconfig.json`                                 |
-| JavaScript | `package.json`                                  |
-| Rust       | `Cargo.toml`                                    |
-| Java       | `pom.xml`, `build.gradle`                       |
-| Ruby       | `Gemfile`                                       |
-| C#         | `*.csproj`, `*.sln`                             |
-| Swift      | `Package.swift`                                 |
-| Kotlin     | `build.gradle.kts`                              |
+| Go         | `go.mod`                                                    |
+| TypeScript | `tsconfig.json`                                             |
+| JavaScript | `package.json`                                              |
+| Rust       | `Cargo.toml`                                                |
+| Java       | `pom.xml`, `build.gradle`                                   |
+| Ruby       | `Gemfile`                                                   |
+| C#         | `*.csproj`, `*.sln`                                         |
+| Swift      | `Package.swift`                                             |
+| Kotlin     | `build.gradle.kts`                                          |
 
 > When both TypeScript and JavaScript are detected, TypeScript takes precedence.
 
@@ -373,9 +453,131 @@ Report issues at {{severity}} severity or higher.
 ```
 
 Commands can come from three sources (highest precedence first):
+
 1. **Project** — `.staghorn/commands/`
 2. **Personal** — `~/.config/staghorn/commands/`
 3. **Team/community** — `commands/` in the source repo
+
+## Creating Evals
+
+Evals are YAML files that define behavioral tests for your Claude config. Each eval contains test cases that verify Claude responds appropriately given your CLAUDE.md guidelines.
+
+### Eval Structure
+
+````yaml
+name: security-secrets
+description: Verify config detects and warns about hardcoded secrets
+tags: [security, critical]
+
+tests:
+  - name: warns-about-api-keys
+    description: Should warn when code contains hardcoded API keys
+    prompt: |
+      Review this code:
+      ```python
+      API_KEY = "sk-1234567890abcdef"
+      client = OpenAI(api_key=API_KEY)
+      ```
+    assert:
+      - type: llm-rubric
+        value: Response must warn about hardcoded API key and suggest using environment variables
+
+  - name: suggests-env-variables
+    prompt: |
+      How should I store my Stripe secret key in my Python app?
+    assert:
+      - type: contains-any
+        value:
+          ["environment variable", "env var", "os.environ", "os.getenv", ".env"]
+````
+
+### Assertion Types
+
+Staghorn uses [Promptfoo assertions](https://promptfoo.dev/docs/configuration/expected-outputs/):
+
+| Type           | Description                                           |
+| -------------- | ----------------------------------------------------- |
+| `llm-rubric`   | AI-graded evaluation against a rubric (most flexible) |
+| `contains`     | Response contains exact string                        |
+| `contains-any` | Response contains any of the listed strings           |
+| `contains-all` | Response contains all listed strings                  |
+| `not-contains` | Response does not contain string                      |
+| `regex`        | Response matches regex pattern                        |
+| `javascript`   | Custom JavaScript assertion function                  |
+
+### Eval Sources
+
+Evals can come from four sources (all are loaded):
+
+| Source       | Location                    | Use case               |
+| ------------ | --------------------------- | ---------------------- |
+| **Team**     | `evals/` in source repo     | Shared team standards  |
+| **Personal** | `~/.config/staghorn/evals/` | Your custom tests      |
+| **Project**  | `.staghorn/evals/`          | Project-specific tests |
+| **Starter**  | Built-in                    | Common baseline tests  |
+
+Install starter evals to customize them:
+
+```bash
+stag eval init                 # To personal directory
+stag eval init --project       # To project directory
+```
+
+### Testing Specific Config Layers
+
+Test different layers of your config independently:
+
+```bash
+stag eval --layer team       # Test only team config
+stag eval --layer personal   # Test only personal additions
+stag eval --layer project    # Test only project config
+stag eval --layer merged     # Test full merged config (default)
+```
+
+### Advanced: Context Configuration
+
+Evals can specify which config layers to test against:
+
+```yaml
+name: team-security-standards
+description: Verify team security guidelines are effective
+
+context:
+  layers: [team] # Only test team config
+  languages: [python, go] # Include these language configs
+
+provider:
+  model: ${STAGHORN_EVAL_MODEL:-claude-sonnet-4-20250514}
+
+tests:
+  # ...
+```
+
+### CI/CD Integration
+
+Run evals in your CI pipeline:
+
+```yaml
+# GitHub Actions example
+- name: Run staghorn evals
+  env:
+    ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+  run: |
+    stag eval --output github
+```
+
+Output formats:
+
+- `table` — Human-readable table (default)
+- `json` — Machine-readable JSON
+- `github` — GitHub Actions annotations
+
+### Environment Variables
+
+| Variable              | Description                                        |
+| --------------------- | -------------------------------------------------- |
+| `ANTHROPIC_API_KEY`   | Required for running evals                         |
+| `STAGHORN_EVAL_MODEL` | Model to use (default: `claude-sonnet-4-20250514`) |
 
 ## Configuration Reference
 
@@ -401,28 +603,30 @@ trusted:
   - community/python-standards
 
 cache:
-  ttl: "24h"              # How long to cache before re-fetching
+  ttl: "24h" # How long to cache before re-fetching
 
 languages:
-  auto_detect: true       # Detect from project marker files
-  enabled: []             # Explicit list (overrides auto-detect)
-  disabled: []            # Languages to exclude
+  auto_detect: true # Detect from project marker files
+  enabled: [] # Explicit list (overrides auto-detect)
+  disabled: [] # Languages to exclude
 ```
 
 ### File Locations
 
-| File                              | Purpose                                         |
-| --------------------------------- | ----------------------------------------------- |
-| `~/.config/staghorn/config.yaml`  | Staghorn settings                               |
-| `~/.config/staghorn/personal.md`  | Your personal additions                         |
-| `~/.config/staghorn/commands/`    | Personal commands                               |
-| `~/.config/staghorn/languages/`   | Personal language configs                       |
-| `~/.cache/staghorn/`              | Cached team/community configs                   |
-| `~/.claude/CLAUDE.md`             | **Output** — merged global config               |
-| `.staghorn/project.md`            | Project config source (you edit this)           |
-| `.staghorn/commands/`             | Project-specific commands                       |
-| `.staghorn/languages/`            | Project-specific language configs               |
-| `./CLAUDE.md`                     | **Output** — merged project config              |
+| File                             | Purpose                               |
+| -------------------------------- | ------------------------------------- |
+| `~/.config/staghorn/config.yaml` | Staghorn settings                     |
+| `~/.config/staghorn/personal.md` | Your personal additions               |
+| `~/.config/staghorn/commands/`   | Personal commands                     |
+| `~/.config/staghorn/languages/`  | Personal language configs             |
+| `~/.config/staghorn/evals/`      | Personal evals                        |
+| `~/.cache/staghorn/`             | Cached team/community configs         |
+| `~/.claude/CLAUDE.md`            | **Output** — merged global config     |
+| `.staghorn/project.md`           | Project config source (you edit this) |
+| `.staghorn/commands/`            | Project-specific commands             |
+| `.staghorn/languages/`           | Project-specific language configs     |
+| `.staghorn/evals/`               | Project-specific evals                |
+| `./CLAUDE.md`                    | **Output** — merged project config    |
 
 ## CLI Flags Reference
 
@@ -456,6 +660,22 @@ stag info --sources        # Annotate output with source information
 stag commands --tag security   # Filter commands by tag
 stag commands --source team    # Filter by source (team, personal, project)
 stag run <command> --dry-run   # Preview command without rendering
+
+# Eval options
+stag eval                      # Run all evals
+stag eval <name>               # Run specific eval
+stag eval --tag security       # Filter by tag
+stag eval --test <name>        # Run specific test (or prefix pattern like "uses-*")
+stag eval --layer team         # Test specific config layer
+stag eval --output json        # Output format (table, json, github)
+stag eval --verbose            # Show detailed output
+stag eval --debug              # Show full responses and preserve temp files
+stag eval --dry-run            # Show what would be tested
+stag eval list                 # List available evals
+stag eval list --source team   # Filter by source
+stag eval info <name>          # Show eval details
+stag eval init                 # Install starter evals
+stag eval init --project       # Install to project directory
 ```
 
 ## Installation
@@ -501,6 +721,7 @@ If you already have a `~/.claude/CLAUDE.md`, the first `stag sync` will detect i
 ## Troubleshooting
 
 **"No editor found"**
+
 ```bash
 export EDITOR="code --wait"  # VS Code
 export EDITOR="vim"          # Vim
@@ -520,6 +741,12 @@ Check `stag languages`. Ensure marker files exist in project root.
 
 **Command not found**
 Run `stag commands` to see available commands. Project overrides personal, which overrides source.
+
+**"Promptfoo not found"**
+Evals require Promptfoo. Install with `npm install -g promptfoo`.
+
+**Evals failing unexpectedly**
+Use `stag eval --debug` to see full Claude responses and preserve temp files for inspection. Check `ANTHROPIC_API_KEY` is set. See the [Evals Guide](EVALS_GUIDE.md) for debugging strategies.
 
 ## License
 

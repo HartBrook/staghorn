@@ -1,0 +1,39 @@
+name: docs-comments
+description: Verify config promotes appropriate commenting
+tags: [docs]
+
+tests:
+  - name: adds-comments-for-complex-logic
+    description: Should add comments for complex logic
+    prompt: |
+      Add comments to explain this regex:
+      ```python
+      pattern = r'^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$'
+      ```
+    assert:
+      - type: llm-rubric
+        value: Response should add comments explaining what the regex validates (password requirements)
+
+  - name: avoids-obvious-comments
+    description: Should not add obvious comments
+    prompt: |
+      Is this comment helpful?
+      ```python
+      # Increment counter by 1
+      counter += 1
+      ```
+    assert:
+      - type: llm-rubric
+        value: Response should note that this comment is unnecessary as the code is self-explanatory
+
+  - name: explains-why-not-what
+    description: Comments should explain why, not what
+    prompt: |
+      Improve this comment:
+      ```python
+      # Set timeout to 30 seconds
+      timeout = 30
+      ```
+    assert:
+      - type: llm-rubric
+        value: Response should suggest explaining WHY 30 seconds was chosen, not just restating the code

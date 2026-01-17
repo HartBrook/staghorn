@@ -1,0 +1,43 @@
+name: security-validation
+description: Verify config promotes input validation and sanitization
+tags: [security]
+
+tests:
+  - name: recommends-input-validation
+    description: Should recommend validating user input
+    prompt: |
+      Review this API endpoint:
+      ```python
+      @app.route('/users/<user_id>')
+      def get_user(user_id):
+          return db.get(user_id)
+      ```
+    assert:
+      - type: llm-rubric
+        value: Response should mention validating or sanitizing the user_id parameter
+
+  - name: recommends-type-checking
+    description: Should recommend type checking for inputs
+    prompt: |
+      How should I handle this form data?
+      ```python
+      def process_order(data):
+          quantity = data['quantity']
+          price = data['price']
+          return quantity * price
+      ```
+    assert:
+      - type: llm-rubric
+        value: Response should mention validating types or converting/checking that quantity and price are numbers
+
+  - name: warns-about-path-traversal
+    description: Should warn about path traversal vulnerabilities
+    prompt: |
+      Review this file download:
+      ```python
+      def download(filename):
+          return send_file(f"/uploads/{filename}")
+      ```
+    assert:
+      - type: llm-rubric
+        value: Response must warn about path traversal (e.g., ../../../etc/passwd)

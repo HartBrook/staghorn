@@ -15,6 +15,7 @@ type Paths struct {
 	PersonalMD        string // ~/.config/staghorn/personal.md
 	PersonalCommands  string // ~/.config/staghorn/commands
 	PersonalLanguages string // ~/.config/staghorn/languages
+	PersonalEvals     string // ~/.config/staghorn/evals
 }
 
 // NewPaths creates Paths using ~/.config and ~/.cache directories.
@@ -32,6 +33,7 @@ func NewPaths() *Paths {
 		PersonalMD:        filepath.Join(configDir, "personal.md"),
 		PersonalCommands:  filepath.Join(configDir, "commands"),
 		PersonalLanguages: filepath.Join(configDir, "languages"),
+		PersonalEvals:     filepath.Join(configDir, "evals"),
 	}
 }
 
@@ -44,6 +46,7 @@ func NewPathsWithOverrides(configDir, cacheDir string) *Paths {
 		PersonalMD:        filepath.Join(configDir, "personal.md"),
 		PersonalCommands:  filepath.Join(configDir, "commands"),
 		PersonalLanguages: filepath.Join(configDir, "languages"),
+		PersonalEvals:     filepath.Join(configDir, "evals"),
 	}
 }
 
@@ -72,6 +75,11 @@ func (p *Paths) TeamLanguagesDir(owner, repo string) string {
 	return filepath.Join(p.CacheDir, fmt.Sprintf("%s-%s-languages", owner, repo))
 }
 
+// TeamEvalsDir returns the path for cached team evals.
+func (p *Paths) TeamEvalsDir(owner, repo string) string {
+	return filepath.Join(p.CacheDir, fmt.Sprintf("%s-%s-evals", owner, repo))
+}
+
 // ClaudeCommandsDir returns the path for Claude Code custom commands.
 func (p *Paths) ClaudeCommandsDir() string {
 	home := os.Getenv("HOME")
@@ -97,6 +105,7 @@ type ProjectPaths struct {
 	OutputMD     string // ./CLAUDE.md (generated output)
 	CommandsDir  string // .staghorn/commands/
 	LanguagesDir string // .staghorn/languages/
+	EvalsDir     string // .staghorn/evals/
 	ConfigFile   string // .staghorn/config.yaml (optional project config)
 }
 
@@ -110,6 +119,12 @@ func NewProjectPaths(projectRoot string) *ProjectPaths {
 		OutputMD:     filepath.Join(projectRoot, "CLAUDE.md"),
 		CommandsDir:  filepath.Join(staghornDir, "commands"),
 		LanguagesDir: filepath.Join(staghornDir, "languages"),
+		EvalsDir:     filepath.Join(staghornDir, "evals"),
 		ConfigFile:   filepath.Join(staghornDir, "config.yaml"),
 	}
+}
+
+// ProjectEvalsDir returns the path for project-specific evals.
+func ProjectEvalsDir(projectRoot string) string {
+	return filepath.Join(projectRoot, ".staghorn", "evals")
 }

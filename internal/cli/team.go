@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/HartBrook/staghorn/internal/commands"
+	"github.com/HartBrook/staghorn/internal/eval"
 	"github.com/HartBrook/staghorn/internal/starter"
 	"github.com/spf13/cobra"
 )
@@ -328,6 +329,24 @@ func runTeamValidate() error {
 		fmt.Printf("%s templates/ - directory not found (optional)\n", warningIcon)
 	}
 
+	// Check evals/ (optional)
+	if _, err := os.Stat("evals"); err == nil {
+		evalsValid, evalsTotal, evalErrs := validateEvals("evals")
+		if evalsTotal == 0 {
+			fmt.Printf("%s evals/ - directory empty\n", warningIcon)
+			warnings++
+		} else if len(evalErrs) > 0 {
+			for _, e := range evalErrs {
+				printError("%s", e)
+			}
+			errors += len(evalErrs)
+		} else {
+			printSuccess("evals/ - %d valid evals", evalsValid)
+		}
+	} else {
+		fmt.Printf("%s evals/ - directory not found (optional)\n", warningIcon)
+	}
+
 	// Summary
 	fmt.Println()
 	if errors > 0 {
@@ -621,6 +640,35 @@ func validateTemplates(dir string) (valid, total int, errs []string) {
 		}
 
 		valid++
+	}
+
+	return valid, total, errs
+}
+
+func validateEvals(dir string) (valid, total int, errs []string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0, 0, nil
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		ext := filepath.Ext(entry.Name())
+		if ext != ".yaml" && ext != ".yml" {
+			continue
+		}
+		total++
+
+		path := filepath.Join(dir, entry.Name())
+		_, err := eval.ParseFile(path, eval.SourceTeam)
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("%s - %v", path, err))
+		} else {
+			valid++
+		}
 	}
 
 	return valid, total, errs

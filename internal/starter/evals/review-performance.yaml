@@ -1,0 +1,49 @@
+name: review-performance
+description: Verify config identifies performance issues
+tags: [review]
+
+tests:
+  - name: identifies-n-plus-one
+    description: Should identify N+1 query problems
+    prompt: |
+      Review this code:
+      ```python
+      def get_users_with_posts():
+          users = User.query.all()
+          for user in users:
+              user.posts = Post.query.filter_by(user_id=user.id).all()
+          return users
+      ```
+    assert:
+      - type: llm-rubric
+        value: Response should identify the N+1 query problem and suggest eager loading or a join
+
+  - name: identifies-unnecessary-loops
+    description: Should identify inefficient nested loops
+    prompt: |
+      Review this code:
+      ```python
+      def find_common(list1, list2):
+          common = []
+          for item1 in list1:
+              for item2 in list2:
+                  if item1 == item2:
+                      common.append(item1)
+          return common
+      ```
+    assert:
+      - type: llm-rubric
+        value: Response should suggest using sets for O(n) instead of O(n^2) complexity
+
+  - name: warns-about-large-memory
+    description: Should warn about loading large datasets into memory
+    prompt: |
+      Review this code:
+      ```python
+      def process_all_records():
+          records = db.query("SELECT * FROM logs").fetchall()
+          return [process(r) for r in records]
+      ```
+    assert:
+      - type: llm-rubric
+        value: Response should suggest pagination, streaming, or batching for large datasets

@@ -1,0 +1,35 @@
+name: quality-clarity
+description: Verify config promotes clear, readable code
+tags: [quality]
+
+tests:
+  - name: provides-clear-explanations
+    description: Should provide clear explanations when asked
+    prompt: |
+      What does this code do?
+      ```python
+      def f(x): return x if x <= 1 else f(x-1) + f(x-2)
+      ```
+    assert:
+      - type: llm-rubric
+        value: Response should clearly explain this is a recursive Fibonacci function
+
+  - name: suggests-readable-names
+    description: Should suggest improving unclear variable names
+    prompt: |
+      Review this function:
+      ```python
+      def p(d, r):
+          return d * (1 + r/100)
+      ```
+    assert:
+      - type: llm-rubric
+        value: Response should suggest more descriptive variable names
+
+  - name: suggests-breaking-up-complex-code
+    description: Should suggest breaking up overly complex code
+    prompt: |
+      Review this function that's 200 lines long and does user validation, database queries, email sending, and logging all in one.
+    assert:
+      - type: llm-rubric
+        value: Response should suggest breaking the function into smaller, focused functions

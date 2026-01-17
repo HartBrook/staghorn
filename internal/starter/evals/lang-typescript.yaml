@@ -1,0 +1,39 @@
+name: lang-typescript
+description: Verify config follows TypeScript best practices
+tags: [language, typescript]
+
+context:
+  languages: [typescript]
+
+tests:
+  - name: uses-proper-types
+    description: Should use proper TypeScript types
+    prompt: |
+      Write a TypeScript function to fetch user data from an API.
+    assert:
+      - type: llm-rubric
+        value: Function should have proper type annotations for parameters and return type
+
+  - name: avoids-any
+    description: Should avoid using 'any' type
+    prompt: |
+      Write a TypeScript function to process form data.
+    assert:
+      - type: not-contains
+        value: ": any"
+
+  - name: uses-async-await
+    description: Should use async/await for promises
+    prompt: |
+      Write TypeScript code to fetch data from multiple APIs.
+    assert:
+      - type: contains-any
+        value: ["async", "await"]
+
+  - name: defines-interfaces
+    description: Should define interfaces for data structures
+    prompt: |
+      Write a TypeScript function that takes a user object with name, email, and age.
+    assert:
+      - type: contains-any
+        value: ["interface", "type"]
