@@ -1,18 +1,14 @@
+// Package config handles staghorn configuration.
 package config
 
 import (
 	"os"
 	"path/filepath"
-	"regexp"
-	"strings"
 	"time"
 
 	"github.com/HartBrook/staghorn/internal/errors"
 	"gopkg.in/yaml.v3"
 )
-
-// repoPattern matches owner/repo format.
-var repoPattern = regexp.MustCompile(`^([a-zA-Z0-9_.-]+)/([a-zA-Z0-9_.-]+)$`)
 
 // LanguageConfig contains language-specific settings.
 type LanguageConfig struct {
@@ -21,24 +17,25 @@ type LanguageConfig struct {
 	Disabled   []string `yaml:"disabled,omitempty"`
 }
 
-// Config represents the staghorn configuration file.
-type Config struct {
-	Version   int            `yaml:"version"`
-	Team      TeamConfig     `yaml:"team"`
-	Cache     CacheConfig    `yaml:"cache"`
-	Languages LanguageConfig `yaml:"languages,omitempty"`
-}
-
-// TeamConfig contains team repository settings.
-type TeamConfig struct {
-	Repo   string `yaml:"repo"`   // e.g., "github.com/acme/standards" or "acme/standards"
-	Branch string `yaml:"branch"` // optional, defaults to repo's default branch
-	Path   string `yaml:"path"`   // optional, defaults to "CLAUDE.md"
-}
-
 // CacheConfig contains cache settings.
 type CacheConfig struct {
 	TTL string `yaml:"ttl"` // e.g., "24h"
+}
+
+// Config represents the staghorn configuration file.
+type Config struct {
+	Version int `yaml:"version"`
+
+	// Source defines where to fetch configs from.
+	// Can be a simple string ("owner/repo") or a structured object for multi-source.
+	Source Source `yaml:"source"`
+
+	// Trusted is a list of repos/orgs that don't require confirmation.
+	// Examples: "acme-corp" (trusts all repos from org), "user/repo" (specific repo)
+	Trusted []string `yaml:"trusted,omitempty"`
+
+	Cache     CacheConfig    `yaml:"cache"`
+	Languages LanguageConfig `yaml:"languages,omitempty"`
 }
 
 // Default values.
@@ -104,12 +101,8 @@ func SaveTo(cfg *Config, path string) error {
 
 // Validate checks config for required fields and valid values.
 func (c *Config) Validate() error {
-	if c.Team.Repo == "" {
-		return errors.ConfigInvalid("team.repo is required")
-	}
-
-	if _, _, err := c.Team.ParseRepo(); err != nil {
-		return err
+	if err := c.Source.Validate(); err != nil {
+		return errors.ConfigInvalid(err.Error())
 	}
 
 	if c.Cache.TTL != "" {
@@ -126,9 +119,6 @@ func (c *Config) applyDefaults() {
 	if c.Version == 0 {
 		c.Version = DefaultVersion
 	}
-	if c.Team.Path == "" {
-		c.Team.Path = DefaultPath
-	}
 	if c.Cache.TTL == "" {
 		c.Cache.TTL = DefaultCacheTTL
 	}
@@ -136,44 +126,6 @@ func (c *Config) applyDefaults() {
 	if len(c.Languages.Enabled) == 0 && !c.Languages.AutoDetect {
 		c.Languages.AutoDetect = true
 	}
-}
-
-// ParseRepo extracts owner and repo name from the repo string.
-// Accepts formats:
-//   - "https://github.com/owner/repo"
-//   - "https://github.com/owner/repo.git"
-//   - "https://github.com/owner/repo/tree/main"
-//   - "https://github.com/owner/repo/blob/main/file.md"
-//   - "github.com/owner/repo"
-//   - "owner/repo"
-func (t *TeamConfig) ParseRepo() (owner, repo string, err error) {
-	repoStr := t.Repo
-
-	// Strip protocol
-	repoStr = strings.TrimPrefix(repoStr, "https://")
-	repoStr = strings.TrimPrefix(repoStr, "http://")
-
-	// Strip host (github.com for now, extensible for gitlab.com etc.)
-	repoStr = strings.TrimPrefix(repoStr, "github.com/")
-
-	// Strip .git suffix and trailing slashes
-	repoStr = strings.TrimSuffix(repoStr, ".git")
-	repoStr = strings.TrimSuffix(repoStr, "/")
-
-	// Split by / and take only owner/repo (first two parts)
-	// This handles URLs like owner/repo/tree/main or owner/repo/blob/main/file.md
-	parts := strings.Split(repoStr, "/")
-	if len(parts) >= 2 {
-		repoStr = parts[0] + "/" + parts[1]
-	}
-
-	// Match owner/repo pattern
-	matches := repoPattern.FindStringSubmatch(repoStr)
-	if matches == nil {
-		return "", "", errors.InvalidRepo(t.Repo)
-	}
-
-	return matches[1], matches[2], nil
 }
 
 // TTLDuration returns the cache TTL as a time.Duration.
@@ -190,4 +142,39 @@ func Exists() bool {
 	paths := NewPaths()
 	_, err := os.Stat(paths.ConfigFile)
 	return err == nil
+}
+
+// IsTrustedSource checks if a repo is trusted according to this config.
+// It checks both the user's trusted list and the default trusted sources.
+func (c *Config) IsTrustedSource(repo string) bool {
+	// Check user's trusted list
+	if IsTrusted(repo, c.Trusted) {
+		return true
+	}
+	// Check default trusted sources
+	return IsTrusted(repo, DefaultTrustedSources)
+}
+
+// NewSimpleConfig creates a config with a single source.
+func NewSimpleConfig(repo string) *Config {
+	return &Config{
+		Version: DefaultVersion,
+		Source: Source{
+			Simple: repo,
+		},
+		Cache: CacheConfig{
+			TTL: DefaultCacheTTL,
+		},
+	}
+}
+
+// DefaultOwnerRepo returns the owner and repo for the default source.
+// This is a convenience method for the common single-source case.
+func (c *Config) DefaultOwnerRepo() (owner, repo string, err error) {
+	return ParseRepo(c.Source.DefaultRepo())
+}
+
+// SourceRepo returns the full repo string for display purposes.
+func (c *Config) SourceRepo() string {
+	return c.Source.DefaultRepo()
 }

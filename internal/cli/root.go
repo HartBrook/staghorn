@@ -40,6 +40,7 @@ configs on top, and outputs a merged file for Claude to consume.`,
 	// Add subcommands
 	rootCmd.AddCommand(NewInitCmd())
 	rootCmd.AddCommand(NewSyncCmd())
+	rootCmd.AddCommand(NewSearchCmd())
 	rootCmd.AddCommand(NewEditCmd())
 	rootCmd.AddCommand(NewInfoCmd())
 	rootCmd.AddCommand(NewProjectCmd())

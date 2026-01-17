@@ -120,7 +120,7 @@ func editLanguage(langID string, noApply bool) error {
 		return nil
 	}
 
-	owner, repo, err := cfg.Team.ParseRepo()
+	owner, repo, err := cfg.DefaultOwnerRepo()
 	if err != nil {
 		printWarning("Could not auto-apply: %v", err)
 		fmt.Printf("  %s Run 'staghorn sync' to apply changes\n", dim("Tip:"))
@@ -181,7 +181,7 @@ func editPersonal(noApply bool) error {
 		return nil
 	}
 
-	owner, repo, err := cfg.Team.ParseRepo()
+	owner, repo, err := cfg.DefaultOwnerRepo()
 	if err != nil {
 		printWarning("Could not auto-apply: %v", err)
 		fmt.Printf("  %s Run 'staghorn sync' to apply changes\n", dim("Tip:"))

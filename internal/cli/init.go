@@ -16,20 +16,144 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const (
+	// maxSearchResultsDisplay is the maximum number of search results to show in interactive mode.
+	maxSearchResultsDisplay = 5
+)
+
 // NewInitCmd creates the init command.
 func NewInitCmd() *cobra.Command {
-	return &cobra.Command{
+	var fromRepo string
+
+	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Initialize staghorn configuration",
 		Long: `Interactive setup for staghorn.
 
-This command will:
-1. Prompt for your team's config repository
-2. Verify authentication works
-3. Create the configuration file
-4. Perform an initial sync`,
-		RunE: runInit,
+This command will help you set up staghorn by either:
+1. Browsing and selecting a public config from the community
+2. Connecting to a private repository
+3. Starting fresh with just the starter commands
+
+You can also install directly from a specific repository:
+  staghorn init --from owner/repo`,
+		Example: `  staghorn init
+  staghorn init --from staghorn-io/python-standards
+  staghorn init --from https://github.com/acme/claude-standards`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if fromRepo != "" {
+				return runInitFrom(cmd.Context(), fromRepo)
+			}
+			return runInit(cmd, args)
+		},
 	}
+
+	cmd.Flags().StringVar(&fromRepo, "from", "", "Install directly from owner/repo")
+
+	return cmd
+}
+
+// runInitFrom handles direct installation from a specific repo.
+func runInitFrom(ctx context.Context, repoStr string) error {
+	paths := config.NewPaths()
+
+	// Check if already configured
+	if config.Exists() {
+		fmt.Println("Staghorn is already configured.")
+		fmt.Printf("Config file: %s\n\n", paths.ConfigFile)
+
+		if !promptYesNo("Do you want to reconfigure?") {
+			return nil
+		}
+		fmt.Println()
+	}
+
+	// Parse and validate repo
+	owner, repo, err := config.ParseRepo(repoStr)
+	if err != nil {
+		return err
+	}
+
+	fullRepo := owner + "/" + repo
+
+	// Try to create a client (prefer authenticated, fall back to unauthenticated for public repos)
+	client, err := createClient()
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Verifying access to %s...\n", fullRepo)
+
+	// Check if repo exists
+	exists, err := client.RepoExists(ctx, owner, repo)
+	if err != nil {
+		return errors.GitHubFetchFailed(fullRepo, err)
+	}
+	if !exists {
+		return fmt.Errorf("repository %s not found or not accessible", fullRepo)
+	}
+
+	// Check if CLAUDE.md exists
+	fileExists, err := client.FileExists(ctx, owner, repo, config.DefaultPath, "")
+	if err != nil {
+		printWarning("Could not verify %s exists: %v", config.DefaultPath, err)
+	} else if !fileExists {
+		printWarning("%s not found in repository", config.DefaultPath)
+		if !promptYesNo("Continue anyway?") {
+			return nil
+		}
+	}
+
+	printSuccess("Repository verified")
+
+	// Check trust and warn if needed
+	cfg := config.NewSimpleConfig(fullRepo)
+	if !cfg.IsTrustedSource(fullRepo) {
+		fmt.Println()
+		fmt.Println(config.TrustWarning(fullRepo))
+		if !promptYesNo("Proceed with installation?") {
+			return nil
+		}
+	}
+
+	// Save config
+	fmt.Println()
+	if err := config.Save(cfg); err != nil {
+		return fmt.Errorf("failed to save config: %w", err)
+	}
+
+	printSuccess("Config saved to %s", paths.ConfigFile)
+
+	// Perform initial fetch (but don't apply yet - we need language selection first)
+	fmt.Println()
+	fmt.Println("Fetching config from source...")
+	syncOpts := &syncOptions{force: true, fetchOnly: true}
+	if err := runSync(ctx, syncOpts); err != nil {
+		printWarning("Initial fetch failed: %v", err)
+		fmt.Println("You can run `staghorn sync` later to fetch the config.")
+	}
+
+	// Create personal.md if it doesn't exist
+	if err := ensurePersonalMD(paths); err != nil {
+		printWarning("Failed to create personal config: %v", err)
+	}
+
+	// Offer language selection BEFORE applying (so sync respects the selection)
+	offerLanguageConfigs(paths, owner, repo)
+
+	// Offer starter commands
+	offerStarterCommands(paths)
+
+	// Now apply with the language selection in place
+	fmt.Println()
+	fmt.Println("Applying config...")
+	applyOpts := &syncOptions{applyOnly: true}
+	if err := runSync(ctx, applyOpts); err != nil {
+		printWarning("Failed to apply config: %v", err)
+	}
+
+	printInitComplete()
+	return nil
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
@@ -46,156 +170,375 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Println()
 	}
 
-	// Verify auth is available, guide user through setup if needed
-	authMethod := github.AuthMethod()
-	if authMethod == "none" {
-		authMethod = setupAuthentication()
-		if authMethod == "" {
-			return errors.New(errors.ErrGitHubAuthFailed, "no authentication configured", "")
+	fmt.Println("Welcome to Staghorn!")
+	fmt.Println()
+	fmt.Println("How would you like to configure Claude Code?")
+	fmt.Println()
+	fmt.Println("  1. Browse public configs")
+	fmt.Println("  2. Connect to a repository (public or private)")
+	fmt.Println("  3. Start fresh with just starter commands")
+	fmt.Println()
+
+	choice := promptString("Choice [1/2/3]:")
+
+	switch choice {
+	case "1", "":
+		return initFromPublic(cmd.Context(), paths)
+	case "2":
+		return initFromRepo(cmd.Context(), paths)
+	case "3":
+		return initFresh(paths)
+	default:
+		return fmt.Errorf("invalid choice: %s", choice)
+	}
+}
+
+// initFromPublic handles browsing and selecting a public config.
+func initFromPublic(ctx context.Context, paths *config.Paths) error {
+	fmt.Println()
+	fmt.Println("Searching for public configs...")
+
+	// Try unauthenticated first for public repos
+	client, err := github.NewUnauthenticatedClient()
+	if err != nil {
+		// Fall back to authenticated
+		client, err = github.NewClient()
+		if err != nil {
+			return fmt.Errorf("failed to create GitHub client: %w", err)
 		}
 	}
 
-	fmt.Printf("Using authentication: %s\n\n", info(authMethod))
+	results, err := client.SearchConfigs(ctx, "")
+	if err != nil {
+		printWarning("Search failed: %v", err)
+		fmt.Println()
+		fmt.Println("You can install directly with: staghorn init --from owner/repo")
+		return nil
+	}
 
-	// Prompt for repo
-	repoURL := promptString("Team config repository URL (e.g., https://github.com/acme/claude-standards):")
+	if len(results) == 0 {
+		fmt.Println("No public configs found with the 'staghorn-config' topic.")
+		fmt.Println()
+		fmt.Println("You can:")
+		fmt.Println("  - Install directly: staghorn init --from owner/repo")
+		fmt.Println("  - Connect to a private repo: staghorn init (choose option 2)")
+		return nil
+	}
+
+	// Display results
+	fmt.Println()
+	fmt.Println("Available public configs:")
+	fmt.Println()
+
+	maxDisplay := maxSearchResultsDisplay
+	if len(results) < maxDisplay {
+		maxDisplay = len(results)
+	}
+
+	for i := 0; i < maxDisplay; i++ {
+		r := results[i]
+		fmt.Printf("  %d. %s/%s", i+1, r.Owner, r.Repo)
+		if r.Stars > 0 {
+			fmt.Printf(" ★ %d", r.Stars)
+		}
+		fmt.Println()
+		if r.Description != "" {
+			fmt.Printf("     %s\n", truncate(r.Description, 60))
+		}
+		fmt.Println()
+	}
+
+	if len(results) > maxDisplay {
+		fmt.Printf("  ... and %d more. Use 'staghorn search' to see all.\n\n", len(results)-maxDisplay)
+	}
+
+	// Prompt for selection
+	fmt.Println("Enter a number to install, or type a search query:")
+	input := promptString("Selection:")
+
+	// Check if it's a number
+	var selectedIdx int
+	if _, err := fmt.Sscanf(input, "%d", &selectedIdx); err == nil {
+		if selectedIdx < 1 || selectedIdx > maxDisplay {
+			return fmt.Errorf("invalid selection: %d", selectedIdx)
+		}
+		selected := results[selectedIdx-1]
+		return runInitFrom(ctx, selected.FullName())
+	}
+
+	// Treat as search query
+	if input != "" {
+		results, err = client.SearchConfigs(ctx, input)
+		if err != nil {
+			return fmt.Errorf("search failed: %w", err)
+		}
+		if len(results) == 0 {
+			fmt.Println("No configs found matching your query.")
+			return nil
+		}
+
+		// Show filtered results and prompt again
+		fmt.Println()
+		fmt.Printf("Found %d configs matching '%s':\n\n", len(results), input)
+		displayCount := min(len(results), maxSearchResultsDisplay)
+		for i := 0; i < displayCount; i++ {
+			r := results[i]
+			fmt.Printf("  %d. %s/%s", i+1, r.Owner, r.Repo)
+			if r.Stars > 0 {
+				fmt.Printf(" ★ %d", r.Stars)
+			}
+			fmt.Println()
+		}
+		fmt.Println()
+
+		input = promptString("Enter number to install:")
+		if _, err := fmt.Sscanf(input, "%d", &selectedIdx); err == nil {
+			if selectedIdx >= 1 && selectedIdx <= displayCount {
+				selected := results[selectedIdx-1]
+				return runInitFrom(ctx, selected.FullName())
+			}
+		}
+		return fmt.Errorf("invalid selection: please enter a number between 1 and %d", displayCount)
+	}
+
+	return nil
+}
+
+// initFromRepo handles connecting to any repository (public or private).
+func initFromRepo(ctx context.Context, paths *config.Paths) error {
+	fmt.Println()
+	repoURL := promptString("Repository (e.g., owner/repo or https://github.com/owner/repo):")
 	if repoURL == "" {
 		return fmt.Errorf("repository is required")
 	}
 
-	// Validate and parse repo
+	// Use runInitFrom which handles both public and private repos
+	return runInitFrom(ctx, repoURL)
+}
+
+// initFresh sets up staghorn with just starter commands, no remote source.
+func initFresh(paths *config.Paths) error {
+	fmt.Println()
+	fmt.Println("Starting fresh with starter commands only.")
+	fmt.Println()
+
+	// Create a minimal config file (empty source is valid for local-only mode)
 	cfg := &config.Config{
-		Team: config.TeamConfig{
-			Repo: repoURL,
+		Version: config.DefaultVersion,
+		Cache: config.CacheConfig{
+			TTL: config.DefaultCacheTTL,
 		},
 	}
-
-	owner, repo, err := cfg.Team.ParseRepo()
-	if err != nil {
-		return err
-	}
-
-	fmt.Printf("\nVerifying access to %s/%s...\n", owner, repo)
-
-	// Create client and verify access
-	client, err := github.NewClient()
-	if err != nil {
-		token := github.GetTokenFromEnv()
-		if token == "" {
-			return errors.GitHubAuthFailed(err)
-		}
-		client, err = github.NewClientWithToken(token)
-		if err != nil {
-			return errors.GitHubAuthFailed(err)
-		}
-	}
-
-	ctx := context.Background()
-
-	// Check if repo exists
-	exists, err := client.RepoExists(ctx, owner, repo)
-	if err != nil {
-		return errors.GitHubFetchFailed(owner+"/"+repo, err)
-	}
-	if !exists {
-		return fmt.Errorf("repository %s/%s not found or not accessible", owner, repo)
-	}
-
-	// Check if CLAUDE.md exists
-	fileExists, err := client.FileExists(ctx, owner, repo, config.DefaultPath, "")
-	if err != nil {
-		printWarning("Could not verify %s exists: %v", config.DefaultPath, err)
-	} else if !fileExists {
-		printWarning("%s not found in repository", config.DefaultPath)
-		if !promptYesNo("Continue anyway?") {
-			return nil
-		}
-	}
-
-	printSuccess("Repository verified")
-
-	// Optional: custom branch
-	fmt.Println()
-	branch := promptString("Branch (leave empty for default):")
-	if branch != "" {
-		cfg.Team.Branch = branch
-	}
-
-	// Optional: custom path
-	path := promptString(fmt.Sprintf("Config file path (default: %s):", config.DefaultPath))
-	if path != "" {
-		cfg.Team.Path = path
-	}
-
-	// Save config
-	fmt.Println()
 	if err := config.Save(cfg); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
-
 	printSuccess("Config saved to %s", paths.ConfigFile)
 
-	// Perform initial sync
-	fmt.Println()
-	fmt.Println("Performing initial sync...")
-	syncOpts := &syncOptions{force: true}
-	if err := runSync(ctx, syncOpts); err != nil {
-		printWarning("Initial sync failed: %v", err)
-		fmt.Println("You can run `staghorn sync` later to fetch the config.")
-	}
-
-	// Create personal.md if it doesn't exist
+	// Create personal.md
 	if err := ensurePersonalMD(paths); err != nil {
 		printWarning("Failed to create personal config: %v", err)
 	}
 
-	// Offer to bootstrap starter commands
-	fmt.Println()
+	// Install starter commands
 	starterCommands := starter.CommandNames()
 	if len(starterCommands) > 0 {
-		fmt.Printf("Staghorn includes %d starter commands (code-review, debug, refactor, etc.)\n", len(starterCommands))
-		if promptYesNo("Install starter commands to your personal config?") {
-			result, err := InstallStarterCommands(paths.PersonalCommands, true)
-			if err != nil {
-				printWarning("Failed to install starter commands: %v", err)
-			} else if result.Aborted {
-				fmt.Println("  Skipped starter commands installation")
-			} else if len(result.Installed) > 0 {
-				printSuccess("Installed %d starter commands to %s", len(result.Installed), paths.PersonalCommands)
-				if len(result.Skipped) > 0 {
-					fmt.Printf("  Skipped %d (using team versions): %s\n", len(result.Skipped), strings.Join(result.Skipped, ", "))
-				}
-				fmt.Printf("  %s Run '%s' to see them\n", dim("Tip:"), info("staghorn commands"))
-			} else if len(result.Skipped) > 0 {
-				fmt.Printf("  Skipped %d commands (using team versions)\n", len(result.Skipped))
-			} else {
-				fmt.Println("  Starter commands already installed")
+		fmt.Printf("Installing %d starter commands...\n", len(starterCommands))
+		result, err := InstallStarterCommands(paths.PersonalCommands, false)
+		if err != nil {
+			printWarning("Failed to install starter commands: %v", err)
+		} else if len(result.Installed) > 0 {
+			printSuccess("Installed %d starter commands", len(result.Installed))
+		}
+	}
+
+	fmt.Println()
+	fmt.Println("Setup complete!")
+	fmt.Println()
+	fmt.Println("You're set up without a remote source. To add one later:")
+	fmt.Printf("  %s --from owner/repo\n", info("staghorn init"))
+	fmt.Println()
+	fmt.Println("Or edit your config directly:")
+	fmt.Printf("  %s\n", info(paths.ConfigFile))
+
+	return nil
+}
+
+// Helper functions
+
+func createClient() (*github.Client, error) {
+	// Try authenticated first
+	client, err := github.NewClient()
+	if err == nil {
+		return client, nil
+	}
+
+	// Try with token from env
+	token := github.GetTokenFromEnv()
+	if token != "" {
+		return github.NewClientWithToken(token)
+	}
+
+	// Fall back to unauthenticated for public repos
+	return github.NewUnauthenticatedClient()
+}
+
+func offerStarterCommands(paths *config.Paths) {
+	starterCommands := starter.CommandNames()
+	if len(starterCommands) == 0 {
+		return
+	}
+
+	fmt.Println()
+	fmt.Printf("Staghorn includes %d starter commands (code-review, debug, refactor, etc.)\n", len(starterCommands))
+	if promptYesNo("Install starter commands to your personal config?") {
+		result, err := InstallStarterCommands(paths.PersonalCommands, true)
+		if err != nil {
+			printWarning("Failed to install starter commands: %v", err)
+		} else if result.Aborted {
+			fmt.Println("  Skipped starter commands installation")
+		} else if len(result.Installed) > 0 {
+			printSuccess("Installed %d starter commands to %s", len(result.Installed), paths.PersonalCommands)
+			if len(result.Skipped) > 0 {
+				fmt.Printf("  Skipped %d (using source versions): %s\n", len(result.Skipped), strings.Join(result.Skipped, ", "))
+			}
+			fmt.Printf("  %s Run '%s' to see them\n", dim("Tip:"), info("staghorn commands"))
+		} else if len(result.Skipped) > 0 {
+			fmt.Printf("  Skipped %d commands (using source versions)\n", len(result.Skipped))
+		} else {
+			fmt.Println("  Starter commands already installed")
+		}
+	}
+}
+
+func offerLanguageConfigs(paths *config.Paths, owner, repo string) {
+	sourceLangDir := paths.TeamLanguagesDir(owner, repo)
+	sourceLangs, _ := listLanguageFiles(sourceLangDir)
+	if len(sourceLangs) == 0 {
+		return
+	}
+
+	fmt.Println()
+	fmt.Printf("Your source has %d language configs: %s\n", len(sourceLangs), strings.Join(sourceLangs, ", "))
+	fmt.Println()
+
+	// Ask which languages to enable
+	fmt.Println("Which languages do you want to enable?")
+	fmt.Println("  1. All of them")
+	fmt.Println("  2. Let me choose")
+	fmt.Println("  3. None (skip language configs)")
+	fmt.Println()
+
+	choice := promptString("Choice [1/2/3]:")
+
+	var enabledLangs []string
+
+	var useAll bool
+
+	switch choice {
+	case "1", "":
+		enabledLangs = sourceLangs
+		useAll = true
+		printSuccess("Enabled all %d languages", len(enabledLangs))
+	case "2":
+		enabledLangs = selectLanguages(sourceLangs)
+		useAll = false
+		if len(enabledLangs) > 0 {
+			printSuccess("Enabled %d languages: %s", len(enabledLangs), strings.Join(enabledLangs, ", "))
+		} else {
+			fmt.Println("  No languages selected")
+		}
+	case "3":
+		fmt.Println("  Skipping language configs")
+		// Save empty list to disable all
+		enabledLangs = []string{}
+		useAll = false
+	default:
+		// Invalid choice, default to all
+		enabledLangs = sourceLangs
+		useAll = true
+		printSuccess("Enabled all %d languages", len(enabledLangs))
+	}
+
+	// Save enabled languages to config
+	if err := saveEnabledLanguages(enabledLangs, useAll); err != nil {
+		printWarning("Failed to save language selection: %v", err)
+	}
+
+	// Offer to create personal language files for selected languages
+	if len(enabledLangs) > 0 && promptYesNo("Create personal language configs to customize them?") {
+		created := 0
+		for _, lang := range enabledLangs {
+			if err := createPersonalLanguageFile(paths.PersonalLanguages, lang); err == nil {
+				created++
+			}
+		}
+		if created > 0 {
+			printSuccess("Created %d personal language configs in %s", created, paths.PersonalLanguages)
+			fmt.Printf("  %s Run '%s' to edit them\n", dim("Tip:"), info("staghorn edit --language <lang>"))
+		} else {
+			fmt.Println("  Personal language configs already exist")
+		}
+	}
+}
+
+// selectLanguages prompts the user to select which languages to enable.
+func selectLanguages(available []string) []string {
+	fmt.Println()
+	fmt.Println("Enter the numbers of languages to enable (comma-separated), or 'all':")
+	for i, lang := range available {
+		fmt.Printf("  %d. %s\n", i+1, lang)
+	}
+	fmt.Println()
+
+	input := promptString("Selection:")
+	input = strings.TrimSpace(input)
+
+	if input == "" || strings.ToLower(input) == "all" {
+		return available
+	}
+
+	// Parse comma-separated numbers
+	var selected []string
+	parts := strings.Split(input, ",")
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		var idx int
+		if _, err := fmt.Sscanf(part, "%d", &idx); err == nil {
+			if idx >= 1 && idx <= len(available) {
+				selected = append(selected, available[idx-1])
 			}
 		}
 	}
 
-	// Offer to create personal language configs matching team languages
-	teamLangDir := paths.TeamLanguagesDir(owner, repo)
-	teamLangs, _ := listLanguageFiles(teamLangDir)
-	if len(teamLangs) > 0 {
-		fmt.Println()
-		fmt.Printf("Your team has %d language configs: %s\n", len(teamLangs), strings.Join(teamLangs, ", "))
-		if promptYesNo("Create personal language configs to customize them?") {
-			created := 0
-			for _, lang := range teamLangs {
-				if err := createPersonalLanguageFile(paths.PersonalLanguages, lang); err == nil {
-					created++
-				}
-			}
-			if created > 0 {
-				printSuccess("Created %d personal language configs in %s", created, paths.PersonalLanguages)
-				fmt.Printf("  %s Run '%s' to edit them\n", dim("Tip:"), info("staghorn edit --language <lang>"))
-			} else {
-				fmt.Println("  Personal language configs already exist")
-			}
-		}
+	return selected
+}
+
+// saveEnabledLanguages updates the config with the selected languages.
+// Pass nil for "all" (auto-detect), empty slice for "none", or specific list.
+func saveEnabledLanguages(langs []string, useAll bool) error {
+	cfg, err := config.Load()
+	if err != nil {
+		return err
 	}
 
+	if useAll {
+		// Clear enabled list to use auto-detect (includes all available)
+		cfg.Languages.Enabled = nil
+		cfg.Languages.AutoDetect = true
+	} else if len(langs) == 0 {
+		// Explicitly disable all languages by setting empty enabled list
+		cfg.Languages.Enabled = []string{}
+		cfg.Languages.AutoDetect = false
+	} else {
+		// Specific selection
+		cfg.Languages.Enabled = langs
+		cfg.Languages.AutoDetect = false
+	}
+
+	return config.Save(cfg)
+}
+
+func printInitComplete() {
 	fmt.Println()
 	fmt.Println("Setup complete!")
 	fmt.Println()
@@ -206,111 +549,14 @@ func runInit(cmd *cobra.Command, args []string) error {
 	fmt.Println("Periodic updates:")
 	fmt.Printf("  %s              - fetch latest and apply\n", info("staghorn sync"))
 	fmt.Printf("  %s --apply-only - re-apply without fetching\n", info("staghorn sync"))
-
-	return nil
 }
 
-// setupAuthentication guides the user through setting up GitHub authentication.
-// Returns the auth method string if successful, or empty string if user should re-run init.
-func setupAuthentication() string {
-	fmt.Println("GitHub authentication is required to fetch team configs.")
-	fmt.Println()
-
-	ghInstalled := github.IsGHCLIInstalled()
-
-	if ghInstalled {
-		// gh is installed but not authenticated
-		fmt.Println("GitHub CLI is installed but not authenticated.")
-		fmt.Println()
-		fmt.Println("Options:")
-		fmt.Println("  1. Authenticate with GitHub CLI (recommended)")
-		fmt.Println("  2. Enter a personal access token")
-		fmt.Println()
-
-		choice := promptString("Choose an option [1/2]:")
-
-		switch choice {
-		case "1", "":
-			fmt.Println()
-			fmt.Println("Run the following command, then re-run 'staghorn init':")
-			fmt.Println()
-			fmt.Printf("  %s\n", info("gh auth login"))
-			fmt.Println()
-			return ""
-
-		case "2":
-			return promptForToken()
-
-		default:
-			printError("Invalid option")
-			return ""
-		}
+func truncate(s string, maxLen int) string {
+	runes := []rune(s)
+	if len(runes) <= maxLen {
+		return s
 	}
-
-	// gh is not installed
-	fmt.Println("Options:")
-	fmt.Println("  1. Install GitHub CLI (recommended)")
-	fmt.Println("  2. Enter a personal access token")
-	fmt.Println()
-
-	choice := promptString("Choose an option [1/2]:")
-
-	switch choice {
-	case "1", "":
-		fmt.Println()
-		fmt.Println("Install GitHub CLI, then re-run 'staghorn init':")
-		fmt.Println()
-		fmt.Println("  macOS:               brew install gh && gh auth login")
-		fmt.Println("  Windows:             winget install --id GitHub.cli && gh auth login")
-		fmt.Println("  Linux (Debian):      sudo apt install gh && gh auth login")
-		fmt.Println("  Linux (Fedora):      sudo dnf install gh && gh auth login")
-		fmt.Println()
-		fmt.Println("  More options:        https://cli.github.com/")
-		fmt.Println()
-		return ""
-
-	case "2":
-		return promptForToken()
-
-	default:
-		printError("Invalid option")
-		return ""
-	}
-}
-
-// promptForToken prompts the user to enter a GitHub personal access token.
-func promptForToken() string {
-	fmt.Println()
-	fmt.Println("Create a personal access token at:")
-	fmt.Println("  https://github.com/settings/tokens/new")
-	fmt.Println()
-	fmt.Println("Required scopes: repo (for private repos) or public_repo (for public repos)")
-	fmt.Println()
-
-	token := promptString("Paste your token:")
-	if token == "" {
-		printError("No token provided")
-		return ""
-	}
-
-	// Validate token format
-	if !strings.HasPrefix(token, "ghp_") && !strings.HasPrefix(token, "github_pat_") {
-		printWarning("Token doesn't match expected format (ghp_* or github_pat_*)")
-		if !promptYesNo("Continue anyway?") {
-			return ""
-		}
-	}
-
-	// Set for current process
-	os.Setenv(github.EnvGitHubToken, token)
-
-	fmt.Println()
-	fmt.Println("To persist this token, add to your shell profile:")
-	fmt.Printf("  export %s=%s\n", github.EnvGitHubToken, token[:10]+"...")
-	fmt.Println()
-
-	printSuccess("Token configured for this session")
-	return "STAGHORN_GITHUB_TOKEN"
+	return string(runes[:maxLen-3]) + "..."
 }
 
 // promptString prompts for a string input.

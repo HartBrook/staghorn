@@ -43,6 +43,17 @@ func NewClientWithToken(token string) (*Client, error) {
 	return &Client{rest: client}, nil
 }
 
+// NewUnauthenticatedClient creates a GitHub client without authentication.
+// This works for public repositories only and has lower rate limits (60/hour).
+// Use this when accessing public configs without requiring user auth.
+func NewUnauthenticatedClient() (*Client, error) {
+	client, err := api.NewRESTClient(api.ClientOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return &Client{rest: client}, nil
+}
+
 // fileContentsResponse represents GitHub's contents API response.
 type fileContentsResponse struct {
 	Type        string `json:"type"`
