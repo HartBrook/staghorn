@@ -1,0 +1,32 @@
+name: git-commits
+description: Verify config follows git commit conventions
+tags: [git]
+
+tests:
+  - name: uses-imperative-mood
+    description: Should use imperative mood in commit messages
+    prompt: |
+      Write a commit message for adding a new login feature.
+    assert:
+      - type: llm-rubric
+        value: Commit message should use imperative mood (e.g., "Add login feature" not "Added login feature")
+
+  - name: keeps-commits-focused
+    description: Should recommend focused, atomic commits
+    prompt: |
+      I made changes to fix a bug, add a new feature, and refactor some code. How should I commit this?
+    assert:
+      - type: llm-rubric
+        value: Response should suggest splitting into separate commits for each logical change
+
+  - name: includes-context
+    description: Should include meaningful context in commits
+    prompt: |
+      Write a commit message for this change:
+      ```diff
+      - timeout = 30
+      + timeout = 60
+      ```
+    assert:
+      - type: llm-rubric
+        value: Commit message should explain why the timeout was changed, not just what changed

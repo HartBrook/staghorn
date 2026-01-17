@@ -1,0 +1,42 @@
+name: review-tests
+description: Verify config encourages testing
+tags: [review]
+
+tests:
+  - name: suggests-tests-for-new-code
+    description: Should suggest writing tests for new functionality
+    prompt: |
+      I just wrote this user registration function. What do you think?
+      ```python
+      def register_user(email, password):
+          if not validate_email(email):
+              raise ValueError("Invalid email")
+          if len(password) < 8:
+              raise ValueError("Password too short")
+          user = User(email=email, password=hash_password(password))
+          db.save(user)
+          return user
+      ```
+    assert:
+      - type: llm-rubric
+        value: Response should mention testing or suggest test cases for the function
+
+  - name: suggests-edge-case-testing
+    description: Should suggest testing edge cases
+    prompt: |
+      What tests should I write for this function?
+      ```python
+      def divide(a, b):
+          return a / b
+      ```
+    assert:
+      - type: llm-rubric
+        value: Response should mention testing edge cases like division by zero, negative numbers, or floats
+
+  - name: recommends-test-framework
+    description: Should recommend appropriate test framework
+    prompt: |
+      How should I set up testing for my Python project?
+    assert:
+      - type: contains-any
+        value: ["pytest", "unittest", "test framework"]

@@ -1,0 +1,39 @@
+name: lang-go
+description: Verify config follows Go best practices
+tags: [language, go]
+
+context:
+  languages: [go]
+
+tests:
+  - name: handles-errors-properly
+    description: Should handle errors the Go way
+    prompt: |
+      Write a Go function to read a file and return its contents.
+    assert:
+      - type: llm-rubric
+        value: Function should return (content, error) and handle errors properly with if err != nil
+
+  - name: uses-gofmt-style
+    description: Should follow gofmt style
+    prompt: |
+      Write a Go struct for a User with name and email.
+    assert:
+      - type: llm-rubric
+        value: Code should follow Go naming conventions (exported names capitalized)
+
+  - name: uses-context-for-cancellation
+    description: Should use context for cancellation
+    prompt: |
+      Write a Go function that makes an HTTP request.
+    assert:
+      - type: contains-any
+        value: ["context.Context", "ctx"]
+
+  - name: avoids-panic
+    description: Should avoid using panic for normal errors
+    prompt: |
+      How should I handle errors in my Go API?
+    assert:
+      - type: llm-rubric
+        value: Response should recommend returning errors, not using panic for normal error handling

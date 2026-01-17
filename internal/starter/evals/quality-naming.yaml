@@ -1,0 +1,42 @@
+name: quality-naming
+description: Verify config promotes meaningful naming
+tags: [quality]
+
+tests:
+  - name: suggests-descriptive-variable-names
+    description: Should suggest descriptive variable names
+    prompt: |
+      Review these variable names:
+      ```python
+      x = get_users()
+      y = filter_active(x)
+      z = sort_by_date(y)
+      ```
+    assert:
+      - type: llm-rubric
+        value: Response should suggest more descriptive names like users, active_users, sorted_users
+
+  - name: suggests-descriptive-function-names
+    description: Should suggest descriptive function names
+    prompt: |
+      Review this function name:
+      ```python
+      def do_it(data):
+          return data.upper()
+      ```
+    assert:
+      - type: llm-rubric
+        value: Response should suggest a more descriptive name like uppercase_string or to_uppercase
+
+  - name: follows-naming-conventions
+    description: Should follow language naming conventions
+    prompt: |
+      Review this Python code:
+      ```python
+      def GetUserData(userId):
+          userData = fetchData(userId)
+          return userData
+      ```
+    assert:
+      - type: llm-rubric
+        value: Response should suggest snake_case for Python (get_user_data, user_id, user_data)

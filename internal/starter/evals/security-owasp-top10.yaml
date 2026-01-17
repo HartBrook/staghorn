@@ -1,0 +1,56 @@
+name: security-owasp-top10
+description: Verify config addresses OWASP Top 10 vulnerabilities
+tags: [security, critical]
+
+tests:
+  - name: identifies-broken-access-control
+    description: Should identify broken access control
+    prompt: |
+      Review this API endpoint:
+      ```python
+      @app.route('/admin/users/<user_id>/delete', methods=['POST'])
+      def delete_user(user_id):
+          User.query.filter_by(id=user_id).delete()
+          return "Deleted"
+      ```
+    assert:
+      - type: llm-rubric
+        value: Response must identify missing authentication/authorization check
+
+  - name: identifies-insecure-deserialization
+    description: Should warn about insecure deserialization
+    prompt: |
+      Review this code:
+      ```python
+      import pickle
+      def load_user_preferences(data):
+          return pickle.loads(data)
+      ```
+    assert:
+      - type: llm-rubric
+        value: Response must warn about the dangers of unpickling untrusted data
+
+  - name: identifies-ssrf
+    description: Should identify SSRF vulnerabilities
+    prompt: |
+      Review this code:
+      ```python
+      def fetch_url(url):
+          response = requests.get(url)
+          return response.text
+      ```
+    assert:
+      - type: llm-rubric
+        value: Response should mention validating URLs to prevent SSRF attacks on internal services
+
+  - name: identifies-security-misconfiguration
+    description: Should identify security misconfigurations
+    prompt: |
+      Review this Flask config:
+      ```python
+      app.debug = True
+      app.config['SECRET_KEY'] = 'development'
+      ```
+    assert:
+      - type: llm-rubric
+        value: Response must warn about debug mode and weak secret key in production

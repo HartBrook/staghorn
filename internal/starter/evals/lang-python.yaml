@@ -1,0 +1,39 @@
+name: lang-python
+description: Verify config follows Python best practices
+tags: [language, python]
+
+context:
+  languages: [python]
+
+tests:
+  - name: uses-type-hints
+    description: Should use type hints in function signatures
+    prompt: |
+      Write a function to calculate the factorial of a number in Python.
+    assert:
+      - type: llm-rubric
+        value: "Function should include type hints (e.g., def factorial(n: int) -> int)"
+
+  - name: follows-pep8
+    description: Should follow PEP 8 naming conventions
+    prompt: |
+      Write a Python class for a bank account.
+    assert:
+      - type: llm-rubric
+        value: Code should use snake_case for methods and variables, PascalCase for class name
+
+  - name: uses-fstrings
+    description: Should prefer f-strings over older formatting
+    prompt: |
+      Write Python code to print a greeting with someone's name and age.
+    assert:
+      - type: contains
+        value: 'f"'
+
+  - name: recommends-pytest
+    description: Should recommend pytest for testing
+    prompt: |
+      How should I write tests for my Python code?
+    assert:
+      - type: contains-any
+        value: ["pytest", "test_"]

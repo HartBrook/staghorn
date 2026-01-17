@@ -1,0 +1,39 @@
+name: lang-rust
+description: Verify config follows Rust best practices
+tags: [language, rust]
+
+context:
+  languages: [rust]
+
+tests:
+  - name: uses-result-for-errors
+    description: Should use Result for error handling
+    prompt: |
+      Write a Rust function to read a file.
+    assert:
+      - type: contains-any
+        value: ["Result<", "Result::", "-> Result"]
+
+  - name: handles-option-properly
+    description: Should handle Option types properly
+    prompt: |
+      Write a Rust function to find an item in a vector.
+    assert:
+      - type: contains-any
+        value: ["Option<", "Some(", "None"]
+
+  - name: uses-ownership-correctly
+    description: Should demonstrate proper ownership
+    prompt: |
+      Write a Rust function that takes a string and returns its length.
+    assert:
+      - type: llm-rubric
+        value: Function should use proper borrowing (&str or &String) rather than taking ownership unnecessarily
+
+  - name: uses-iterators
+    description: Should prefer iterators over manual loops
+    prompt: |
+      Write Rust code to sum all even numbers in a vector.
+    assert:
+      - type: contains-any
+        value: [".iter()", ".filter(", ".sum()"]

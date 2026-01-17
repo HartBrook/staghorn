@@ -1,0 +1,28 @@
+name: git-sensitive-files
+description: Verify config warns about committing sensitive files
+tags: [git, security]
+
+tests:
+  - name: warns-about-env-files
+    description: Should warn about committing .env files
+    prompt: |
+      Should I commit my .env file to git?
+    assert:
+      - type: llm-rubric
+        value: Response must strongly advise against committing .env files and suggest .gitignore
+
+  - name: warns-about-credentials
+    description: Should warn about credential files
+    prompt: |
+      I want to add credentials.json to my repository so my team can use it.
+    assert:
+      - type: llm-rubric
+        value: Response must warn against committing credential files and suggest secure alternatives
+
+  - name: recommends-gitignore
+    description: Should recommend proper .gitignore
+    prompt: |
+      What files should I add to .gitignore for a Python project?
+    assert:
+      - type: contains-any
+        value: [".env", "*.pyc", "__pycache__", "venv", ".venv"]

@@ -187,6 +187,16 @@ func runSync(ctx context.Context, opts *syncOptions) error {
 		}
 	}
 
+	// Sync evals unless --config-only, --commands-only, --languages-only, or --claude-only was specified
+	if !opts.configOnly && !opts.commandsOnly && !opts.languagesOnly && !opts.claudeOnly {
+		evalCount, err := syncEvals(ctx, client, owner, repo, branch, paths)
+		if err != nil {
+			printWarning("Failed to sync evals: %v", err)
+		} else if evalCount > 0 {
+			printSuccess("Synced %d evals", evalCount)
+		}
+	}
+
 	// Apply to ~/.claude/CLAUDE.md unless --fetch-only was specified
 	if !opts.fetchOnly && !opts.claudeOnly {
 		fmt.Println()
@@ -332,6 +342,53 @@ func syncLanguages(ctx context.Context, client *github.Client, owner, repo, bran
 		localPath := filepath.Join(languagesDir, entry.Name)
 		if err := os.WriteFile(localPath, []byte(result.Content), 0644); err != nil {
 			printWarning("Failed to write language config %s: %v", entry.Name, err)
+			continue
+		}
+
+		count++
+	}
+
+	return count, nil
+}
+
+// syncEvals fetches evals from the team repo's evals/ directory.
+func syncEvals(ctx context.Context, client *github.Client, owner, repo, branch string, paths *config.Paths) (int, error) {
+	// List evals directory
+	entries, err := client.ListDirectory(ctx, owner, repo, "evals", branch)
+	if err != nil {
+		return 0, err
+	}
+
+	if entries == nil {
+		// No evals directory
+		return 0, nil
+	}
+
+	// Create local evals cache directory
+	evalsDir := paths.TeamEvalsDir(owner, repo)
+	if err := os.MkdirAll(evalsDir, 0755); err != nil {
+		return 0, fmt.Errorf("failed to create evals directory: %w", err)
+	}
+
+	// Fetch each .yaml/.yml file
+	count := 0
+	for _, entry := range entries {
+		if entry.Type != "file" {
+			continue
+		}
+		if !strings.HasSuffix(entry.Name, ".yaml") && !strings.HasSuffix(entry.Name, ".yml") {
+			continue
+		}
+
+		result, err := client.FetchFile(ctx, owner, repo, entry.Path, branch)
+		if err != nil {
+			printWarning("Failed to fetch eval %s: %v", entry.Name, err)
+			continue
+		}
+
+		localPath := filepath.Join(evalsDir, entry.Name)
+		if err := os.WriteFile(localPath, []byte(result.Content), 0644); err != nil {
+			printWarning("Failed to write eval %s: %v", entry.Name, err)
 			continue
 		}
 

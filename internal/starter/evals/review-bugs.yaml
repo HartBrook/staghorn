@@ -1,0 +1,54 @@
+name: review-bugs
+description: Verify config identifies common bugs in code
+tags: [review]
+
+tests:
+  - name: identifies-null-reference
+    description: Should identify potential null/None reference
+    prompt: |
+      Review this code:
+      ```python
+      def get_name(user):
+          return user.profile.name
+      ```
+    assert:
+      - type: llm-rubric
+        value: Response should mention potential AttributeError if user or profile is None
+
+  - name: identifies-off-by-one
+    description: Should identify off-by-one errors
+    prompt: |
+      Review this loop:
+      ```python
+      for i in range(1, len(items)):
+          process(items[i])
+      ```
+    assert:
+      - type: llm-rubric
+        value: Response should note that index 0 is skipped (off-by-one if unintentional)
+
+  - name: identifies-division-by-zero
+    description: Should identify division by zero risk
+    prompt: |
+      Review this function:
+      ```python
+      def calculate_average(numbers):
+          return sum(numbers) / len(numbers)
+      ```
+    assert:
+      - type: llm-rubric
+        value: Response must warn about division by zero when list is empty
+
+  - name: identifies-resource-leak
+    description: Should identify resource leaks
+    prompt: |
+      Review this file handling:
+      ```python
+      def read_config():
+          f = open('config.json')
+          data = json.load(f)
+          return data
+      ```
+    assert:
+      - type: llm-rubric
+        value: Response must mention that file is never closed and suggest using 'with' statement

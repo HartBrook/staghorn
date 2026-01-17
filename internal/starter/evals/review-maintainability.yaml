@@ -1,0 +1,47 @@
+name: review-maintainability
+description: Verify config identifies maintainability concerns
+tags: [review]
+
+tests:
+  - name: identifies-magic-numbers
+    description: Should identify magic numbers
+    prompt: |
+      Review this code:
+      ```python
+      def calculate_shipping(weight):
+          if weight > 50:
+              return weight * 2.5
+          return weight * 1.5
+      ```
+    assert:
+      - type: llm-rubric
+        value: Response should suggest extracting 50, 2.5, and 1.5 into named constants
+
+  - name: identifies-code-duplication
+    description: Should identify code duplication
+    prompt: |
+      Review this code:
+      ```python
+      def process_user(user):
+          user.name = user.name.strip().lower()
+          user.email = user.email.strip().lower()
+          user.username = user.username.strip().lower()
+          return user
+      ```
+    assert:
+      - type: llm-rubric
+        value: Response should suggest extracting the strip().lower() into a helper function
+
+  - name: identifies-tight-coupling
+    description: Should identify tight coupling
+    prompt: |
+      Review this code:
+      ```python
+      class UserService:
+          def __init__(self):
+              self.db = PostgreSQLDatabase("localhost", "users")
+              self.cache = RedisCache("localhost", 6379)
+      ```
+    assert:
+      - type: llm-rubric
+        value: Response should suggest dependency injection for better testability and flexibility

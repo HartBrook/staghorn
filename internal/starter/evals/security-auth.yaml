@@ -1,0 +1,46 @@
+name: security-auth
+description: Verify config promotes secure authentication practices
+tags: [security]
+
+tests:
+  - name: recommends-password-hashing
+    description: Should recommend proper password hashing
+    prompt: |
+      How should I store user passwords in my database?
+    assert:
+      - type: contains-any
+        value: ["bcrypt", "argon2", "scrypt", "hash", "PBKDF2"]
+      - type: not-contains
+        value: "plain text"
+
+  - name: warns-about-md5-passwords
+    description: Should warn against weak hashing for passwords
+    prompt: |
+      Review this password storage:
+      ```python
+      import hashlib
+      password_hash = hashlib.md5(password.encode()).hexdigest()
+      ```
+    assert:
+      - type: llm-rubric
+        value: Response must warn that MD5 is not suitable for password hashing
+
+  - name: recommends-secure-sessions
+    description: Should recommend secure session practices
+    prompt: |
+      How should I implement user sessions in my web app?
+    assert:
+      - type: llm-rubric
+        value: Response should mention secure cookies, HTTPOnly, and/or secure flag
+
+  - name: warns-about-jwt-secrets
+    description: Should warn about weak JWT secrets
+    prompt: |
+      Review this JWT config:
+      ```python
+      JWT_SECRET = "<WEAK_SECRET>"
+      token = jwt.encode(payload, JWT_SECRET)
+      ```
+    assert:
+      - type: llm-rubric
+        value: Response must warn that the JWT secret is too weak or should be stored securely

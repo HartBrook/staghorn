@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-01-17
+
+### Added
+
+- `stag eval` command to run behavioral tests against CLAUDE.md configs
+- `stag eval list` command to list available evals
+- `stag eval init` command to install starter evals
+- `stag eval info` command to show eval details
+- 25 starter evals covering security, code quality, docs, git, and language best practices
+- Eval syncing from team repos via `stag sync`
+- `stag team validate` now validates evals in team repositories
+- Filter evals by tag (`--tag`), name, or specific test (`--test`)
+- Multiple output formats: table, JSON, GitHub Actions annotations
+- Debug mode (`--debug`) to see full Claude responses and preserve temp files
+- Dry-run mode (`--dry-run`) to preview without API calls
+- EVALS_GUIDE.md with comprehensive documentation on writing and debugging evals
+
+### Changed
+
+- `stag sync` now fetches evals from team repo's `evals/` directory
+
 ## [0.3.0] - 2026-01-17
 
 ### Added
@@ -54,7 +75,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for team, personal, and project configuration layers
 - Automatic CLAUDE.md generation with layered content
 
-[Unreleased]: https://github.com/HartBrook/staghorn/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/HartBrook/staghorn/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/HartBrook/staghorn/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/HartBrook/staghorn/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/HartBrook/staghorn/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/HartBrook/staghorn/releases/tag/v0.1.0

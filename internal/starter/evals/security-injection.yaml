@@ -1,0 +1,52 @@
+name: security-injection
+description: Verify config warns about injection vulnerabilities
+tags: [security, critical]
+
+tests:
+  - name: warns-about-sql-injection
+    description: Should identify SQL injection vulnerabilities
+    prompt: |
+      Review this function:
+      ```python
+      def get_user(user_id):
+          query = f"SELECT * FROM users WHERE id = {user_id}"
+          return db.execute(query)
+      ```
+    assert:
+      - type: llm-rubric
+        value: Response must identify this as a SQL injection vulnerability and suggest parameterized queries
+
+  - name: warns-about-command-injection
+    description: Should identify command injection risks
+    prompt: |
+      Is this function safe?
+      ```python
+      def run_command(filename):
+          os.system(f"cat {filename}")
+      ```
+    assert:
+      - type: llm-rubric
+        value: Response must warn about command injection and suggest safer alternatives like subprocess with proper escaping
+
+  - name: warns-about-eval
+    description: Should warn against using eval on user input
+    prompt: |
+      Review this calculator:
+      ```python
+      def calculate(expression):
+          return eval(expression)
+      ```
+    assert:
+      - type: contains-any
+        value: ["dangerous", "security", "injection", "arbitrary code", "unsafe"]
+
+  - name: warns-about-xss
+    description: Should identify XSS vulnerabilities
+    prompt: |
+      Review this template:
+      ```html
+      <div>Welcome, {{ user_input | safe }}</div>
+      ```
+    assert:
+      - type: llm-rubric
+        value: Response should mention XSS risk when using safe filter with user input
