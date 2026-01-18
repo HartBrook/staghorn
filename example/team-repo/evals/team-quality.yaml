@@ -1,0 +1,50 @@
+name: team-quality
+description: Verify team code quality guidelines are followed
+tags: [quality, team]
+
+# Tests aligned with the Code Style section of CLAUDE.md:
+# - Write clear, self-documenting code
+# - Prefer explicit over implicit
+# - Keep functions small and focused (under 50 lines)
+# - Use meaningful variable and function names
+
+tests:
+  - name: uses-descriptive-names
+    description: Should use meaningful variable and function names
+    prompt: |
+      Write a function to calculate the total price of items in a shopping cart
+    assert:
+      - type: llm-rubric
+        value: Response uses descriptive names like total_price, cart_items, or similar - not single letters or vague names like x, data, or result
+
+  - name: keeps-functions-focused
+    description: Should keep functions small and single-purpose
+    prompt: |
+      Review this function:
+      ```python
+      def process_order(order):
+          # Validate order (10 lines)
+          # Calculate totals (15 lines)
+          # Apply discounts (20 lines)
+          # Update inventory (15 lines)
+          # Send confirmation email (10 lines)
+          # Log analytics (10 lines)
+          pass  # 80+ lines total
+      ```
+    assert:
+      - type: llm-rubric
+        value: Response should recommend splitting into smaller, focused functions
+
+  - name: prefers-explicit-code
+    description: Should prefer explicit over implicit patterns
+    prompt: |
+      Review this Python code:
+      ```python
+      from utils import *
+
+      def process(d):
+          return {k: v for k, v in d.items() if v}
+      ```
+    assert:
+      - type: llm-rubric
+        value: Response should recommend explicit imports and more descriptive variable names

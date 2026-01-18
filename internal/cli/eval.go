@@ -61,6 +61,8 @@ merged config. This helps ensure your team's guidelines are actually followed.`,
 	cmd.AddCommand(NewEvalListCmd())
 	cmd.AddCommand(NewEvalInitCmd())
 	cmd.AddCommand(NewEvalInfoCmd())
+	cmd.AddCommand(NewEvalValidateCmd())
+	cmd.AddCommand(NewEvalCreateCmd())
 
 	return cmd
 }
@@ -571,4 +573,364 @@ func countTests(evals []*eval.Eval) int {
 		total += e.TestCount()
 	}
 	return total
+}
+
+// NewEvalValidateCmd creates the 'eval validate' command.
+func NewEvalValidateCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "validate [name]",
+		Short: "Validate eval definitions without running them",
+		Long: `Validates eval YAML files for correctness before running.
+
+Checks for:
+- Valid assertion types (llm-rubric, contains, regex, etc.)
+- Required fields (name, prompt, assert)
+- Proper YAML structure
+- Naming conventions
+
+Returns exit code 1 if any errors are found.`,
+		Example: `  staghorn eval validate                    # Validate all evals
+  staghorn eval validate security-secrets   # Validate specific eval`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := ""
+			if len(args) == 1 {
+				name = args[0]
+			}
+			return runEvalValidate(name)
+		},
+	}
+}
+
+func runEvalValidate(name string) error {
+	evals, err := loadEvals()
+	if err != nil {
+		return err
+	}
+
+	if len(evals) == 0 {
+		fmt.Println("No evals found.")
+		fmt.Println()
+		fmt.Println("Run " + info("staghorn eval init") + " to install starter evals.")
+		return nil
+	}
+
+	// Filter by name if provided
+	if name != "" {
+		var filtered []*eval.Eval
+		for _, e := range evals {
+			if e.Name == name {
+				filtered = append(filtered, e)
+				break
+			}
+		}
+		if len(filtered) == 0 {
+			return fmt.Errorf("eval '%s' not found", name)
+		}
+		evals = filtered
+	}
+
+	fmt.Printf("Validating %d eval(s)...\n", len(evals))
+	fmt.Println()
+
+	totalErrors := 0
+	totalWarnings := 0
+	validCount := 0
+	invalidCount := 0
+
+	for _, e := range evals {
+		errors := e.Validate()
+		errorCount, warningCount := eval.CountByLevel(errors)
+		totalErrors += errorCount
+		totalWarnings += warningCount
+
+		if errorCount > 0 {
+			invalidCount++
+			fmt.Printf("%s %s (%d tests)\n", danger("✗"), e.Name, e.TestCount())
+			for _, err := range errors {
+				prefix := "  "
+				if err.Level == eval.ValidationLevelError {
+					prefix += danger("error: ")
+				} else {
+					prefix += warning("warning: ")
+				}
+				fmt.Printf("%s%s: %s\n", prefix, err.Field, err.Message)
+			}
+		} else if warningCount > 0 {
+			validCount++
+			fmt.Printf("%s %s (%d tests)\n", success("✓"), e.Name, e.TestCount())
+			for _, err := range errors {
+				fmt.Printf("  %s%s: %s\n", warning("warning: "), err.Field, err.Message)
+			}
+		} else {
+			validCount++
+			fmt.Printf("%s %s (%d tests)\n", success("✓"), e.Name, e.TestCount())
+		}
+	}
+
+	fmt.Println()
+	summary := fmt.Sprintf("%d valid", validCount)
+	if invalidCount > 0 {
+		summary += fmt.Sprintf(", %s", danger(fmt.Sprintf("%d invalid", invalidCount)))
+	}
+	if totalWarnings > 0 {
+		summary += fmt.Sprintf(", %s", warning(fmt.Sprintf("%d warning(s)", totalWarnings)))
+	}
+	fmt.Println(summary)
+
+	if totalErrors > 0 {
+		return fmt.Errorf("%d eval(s) have validation errors", invalidCount)
+	}
+
+	return nil
+}
+
+// NewEvalCreateCmd creates the 'eval create' command.
+func NewEvalCreateCmd() *cobra.Command {
+	var project bool
+	var team bool
+	var templateName string
+	var fromEval string
+	var evalName string
+	var description string
+
+	cmd := &cobra.Command{
+		Use:   "create",
+		Short: "Create a new eval from a template",
+		Long: `Creates a new eval file from a template or existing eval.
+
+Available templates:
+- security: Security-focused eval for testing security guidelines
+- quality: Code quality eval for testing style and best practices
+- language: Language-specific eval template
+- blank: Minimal blank template to start from scratch
+
+Destination options:
+- Default: ~/.config/staghorn/evals/ (personal evals)
+- --project: .staghorn/evals/ (project-specific evals)
+- --team: ./evals/ (team/community evals for sharing via git)`,
+		Example: `  staghorn eval create                              # Interactive wizard
+  staghorn eval create --template security          # Use security template
+  staghorn eval create --from security-secrets      # Copy existing eval
+  staghorn eval create --project                    # Save to project directory
+  staghorn eval create --team                       # Save to ./evals/ for team sharing`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runEvalCreate(project, team, templateName, fromEval, evalName, description)
+		},
+	}
+
+	cmd.Flags().BoolVar(&project, "project", false, "Save to project directory (.staghorn/evals/) instead of personal")
+	cmd.Flags().BoolVar(&team, "team", false, "Save to ./evals/ for team/community sharing via git")
+	cmd.Flags().StringVar(&templateName, "template", "", "Template to use (security, quality, language, blank)")
+	cmd.Flags().StringVar(&fromEval, "from", "", "Copy from an existing eval")
+	cmd.Flags().StringVar(&evalName, "name", "", "Name for the new eval")
+	cmd.Flags().StringVar(&description, "description", "", "Description for the new eval")
+
+	return cmd
+}
+
+func runEvalCreate(project, team bool, templateName, fromEval, evalName, description string) error {
+	paths := config.NewPaths()
+
+	// Check for conflicting flags
+	if project && team {
+		return fmt.Errorf("cannot use both --project and --team flags")
+	}
+
+	// Determine target directory
+	var targetDir string
+	var targetLabel string
+	if team {
+		// Team evals go to ./evals/ in the current directory
+		cwd, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("failed to get current directory: %w", err)
+		}
+		targetDir = cwd + "/evals"
+		targetLabel = "./evals/"
+	} else if project {
+		projectRoot := findProjectRoot()
+		if projectRoot == "" {
+			return fmt.Errorf("no project root found (looking for .git or .staghorn directory)")
+		}
+		targetDir = config.ProjectEvalsDir(projectRoot)
+		targetLabel = ".staghorn/evals/"
+	} else {
+		targetDir = paths.PersonalEvals
+		targetLabel = "~/.config/staghorn/evals/"
+	}
+
+	// Ensure target directory exists
+	if err := os.MkdirAll(targetDir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	var content string
+	var err error
+
+	if fromEval != "" {
+		// Copy from existing eval
+		content, err = copyFromExistingEval(fromEval, evalName, description)
+		if err != nil {
+			return err
+		}
+	} else {
+		// Use template (interactive if not specified)
+		content, err = createFromTemplate(templateName, evalName, description)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Parse to get the name for the filename
+	parsedEval, err := eval.Parse(content, eval.SourcePersonal, "")
+	if err != nil {
+		return fmt.Errorf("generated invalid eval: %w", err)
+	}
+
+	// Check if file already exists
+	filename := parsedEval.Name + ".yaml"
+	filepath := targetDir + "/" + filename
+	if _, err := os.Stat(filepath); err == nil {
+		return fmt.Errorf("eval file already exists: %s", filepath)
+	}
+
+	// Write file
+	if err := os.WriteFile(filepath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("failed to write file: %w", err)
+	}
+
+	printSuccess("Created %s%s", targetLabel, filename)
+	fmt.Println()
+	fmt.Println("Next steps:")
+	fmt.Printf("  1. Edit the eval file to customize tests\n")
+	fmt.Printf("  2. Run: %s\n", info("staghorn eval validate "+parsedEval.Name))
+	fmt.Printf("  3. Run: %s\n", info("staghorn eval "+parsedEval.Name))
+
+	return nil
+}
+
+func copyFromExistingEval(fromName, newName, description string) (string, error) {
+	evals, err := loadEvals()
+	if err != nil {
+		return "", err
+	}
+
+	var source *eval.Eval
+	for _, e := range evals {
+		if e.Name == fromName {
+			source = e
+			break
+		}
+	}
+	if source == nil {
+		return "", fmt.Errorf("eval '%s' not found", fromName)
+	}
+
+	// Read the original file
+	content, err := os.ReadFile(source.FilePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read source eval: %w", err)
+	}
+
+	// Get new name interactively if not provided
+	if newName == "" {
+		fmt.Print("Name for new eval: ")
+		if _, err := fmt.Scanln(&newName); err != nil {
+			return "", fmt.Errorf("failed to read input: %w", err)
+		}
+		if newName == "" {
+			return "", fmt.Errorf("name is required")
+		}
+	}
+
+	// Get description interactively if not provided
+	if description == "" {
+		fmt.Print("Description (press enter to keep original): ")
+		var input string
+		// Ignore error here - empty input on enter is expected
+		_, _ = fmt.Scanln(&input)
+		if input != "" {
+			description = input
+		}
+	}
+
+	// Replace name in content
+	result := strings.Replace(string(content), "name: "+source.Name, "name: "+newName, 1)
+
+	// Replace description if provided
+	if description != "" && source.Description != "" {
+		result = strings.Replace(result, "description: "+source.Description, "description: "+description, 1)
+	}
+
+	return result, nil
+}
+
+func createFromTemplate(templateName, evalName, description string) (string, error) {
+	// Interactive mode if template not specified
+	if templateName == "" {
+		fmt.Println("Select a template:")
+		for i, t := range eval.Templates {
+			fmt.Printf("  %d. %s - %s\n", i+1, t.Name, t.Description)
+		}
+		fmt.Print("Choice (1-4): ")
+		var choice int
+		if _, err := fmt.Scanln(&choice); err != nil {
+			return "", fmt.Errorf("failed to read input: %w", err)
+		}
+		if choice < 1 || choice > len(eval.Templates) {
+			return "", fmt.Errorf("invalid choice")
+		}
+		templateName = eval.Templates[choice-1].Name
+	}
+
+	// Get name interactively if not provided
+	if evalName == "" {
+		fmt.Print("Name for new eval: ")
+		if _, err := fmt.Scanln(&evalName); err != nil {
+			return "", fmt.Errorf("failed to read input: %w", err)
+		}
+		if evalName == "" {
+			return "", fmt.Errorf("name is required")
+		}
+	}
+
+	// Get description interactively if not provided
+	if description == "" {
+		fmt.Print("Description: ")
+		// Ignore error - empty input on enter uses default
+		_, _ = fmt.Scanln(&description)
+		if description == "" {
+			description = "Custom eval"
+		}
+	}
+
+	// Get tags
+	fmt.Print("Tags (comma-separated, or press enter for none): ")
+	var tagsInput string
+	// Ignore error - empty input on enter is expected
+	_, _ = fmt.Scanln(&tagsInput)
+	var tags []string
+	if tagsInput != "" {
+		for _, tag := range strings.Split(tagsInput, ",") {
+			tag = strings.TrimSpace(tag)
+			if tag != "" {
+				tags = append(tags, tag)
+			}
+		}
+	}
+
+	// Render template
+	vars := eval.TemplateVars{
+		Name:        evalName,
+		Description: description,
+		Tags:        tags,
+	}
+
+	content, err := eval.RenderTemplateByName(templateName, vars)
+	if err != nil {
+		return "", err
+	}
+
+	return content, nil
 }
