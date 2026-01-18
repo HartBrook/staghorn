@@ -5,10 +5,37 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
+
+// ValidAssertionTypes lists all valid assertion types supported by Promptfoo.
+var ValidAssertionTypes = []string{
+	"llm-rubric",
+	"contains",
+	"contains-any",
+	"contains-all",
+	"not-contains",
+	"regex",
+	"javascript",
+}
+
+// ValidationLevel indicates the severity of a validation issue.
+type ValidationLevel string
+
+const (
+	ValidationLevelError   ValidationLevel = "error"
+	ValidationLevelWarning ValidationLevel = "warning"
+)
+
+// ValidationError represents a single validation issue.
+type ValidationError struct {
+	Field   string          // e.g., "tests[0].assert[0].type"
+	Message string          // Human-readable error message
+	Level   ValidationLevel // error or warning
+}
 
 // Source indicates where an eval came from.
 type Source string
@@ -254,4 +281,239 @@ func (e *Eval) FilterTests(testFilter string) *Eval {
 	result := *e
 	result.Tests = filtered
 	return &result
+}
+
+// Validate performs detailed validation of the eval and returns any issues found.
+// Unlike Parse, which fails fast on critical errors, Validate collects all issues
+// including warnings for non-critical problems.
+func (e *Eval) Validate() []ValidationError {
+	var errors []ValidationError
+
+	// Check eval-level fields
+	if e.Name == "" {
+		errors = append(errors, ValidationError{
+			Field:   "name",
+			Message: "eval must have a name",
+			Level:   ValidationLevelError,
+		})
+	} else if !isValidName(e.Name) {
+		errors = append(errors, ValidationError{
+			Field:   "name",
+			Message: "name should contain only lowercase letters, numbers, and hyphens",
+			Level:   ValidationLevelWarning,
+		})
+	}
+
+	if e.Description == "" {
+		errors = append(errors, ValidationError{
+			Field:   "description",
+			Message: "eval should have a description",
+			Level:   ValidationLevelWarning,
+		})
+	}
+
+	// Validate tags
+	for i, tag := range e.Tags {
+		if !isValidTag(tag) {
+			errors = append(errors, ValidationError{
+				Field:   fmt.Sprintf("tags[%d]", i),
+				Message: fmt.Sprintf("tag %q should contain only lowercase letters, numbers, and hyphens", tag),
+				Level:   ValidationLevelWarning,
+			})
+		}
+	}
+
+	// Check tests
+	if len(e.Tests) == 0 {
+		errors = append(errors, ValidationError{
+			Field:   "tests",
+			Message: "eval must have at least one test",
+			Level:   ValidationLevelError,
+		})
+	}
+
+	for i, test := range e.Tests {
+		testErrors := validateTest(test, i)
+		errors = append(errors, testErrors...)
+	}
+
+	return errors
+}
+
+// validateTest validates a single test and returns any issues.
+func validateTest(test Test, index int) []ValidationError {
+	var errors []ValidationError
+	prefix := fmt.Sprintf("tests[%d]", index)
+
+	if test.Name == "" {
+		errors = append(errors, ValidationError{
+			Field:   prefix + ".name",
+			Message: "test must have a name",
+			Level:   ValidationLevelError,
+		})
+	}
+
+	if test.Description == "" {
+		errors = append(errors, ValidationError{
+			Field:   prefix,
+			Message: fmt.Sprintf("test %q should have a description", test.Name),
+			Level:   ValidationLevelWarning,
+		})
+	}
+
+	if test.Prompt == "" {
+		errors = append(errors, ValidationError{
+			Field:   prefix + ".prompt",
+			Message: fmt.Sprintf("test %q must have a prompt", test.Name),
+			Level:   ValidationLevelError,
+		})
+	} else if strings.TrimSpace(test.Prompt) == "" {
+		errors = append(errors, ValidationError{
+			Field:   prefix + ".prompt",
+			Message: fmt.Sprintf("test %q has an empty prompt (whitespace only)", test.Name),
+			Level:   ValidationLevelError,
+		})
+	}
+
+	if len(test.Assert) == 0 {
+		errors = append(errors, ValidationError{
+			Field:   prefix + ".assert",
+			Message: fmt.Sprintf("test %q must have at least one assertion", test.Name),
+			Level:   ValidationLevelError,
+		})
+	}
+
+	for j, assertion := range test.Assert {
+		assertErrors := validateAssertion(assertion, prefix, j)
+		errors = append(errors, assertErrors...)
+	}
+
+	return errors
+}
+
+// validateAssertion validates a single assertion and returns any issues.
+func validateAssertion(assertion Assertion, testPrefix string, index int) []ValidationError {
+	var errors []ValidationError
+	field := fmt.Sprintf("%s.assert[%d]", testPrefix, index)
+
+	if assertion.Type == "" {
+		errors = append(errors, ValidationError{
+			Field:   field + ".type",
+			Message: "assertion must have a type",
+			Level:   ValidationLevelError,
+		})
+		return errors
+	}
+
+	if !isValidAssertionType(assertion.Type) {
+		suggestion := suggestAssertionType(assertion.Type)
+		msg := fmt.Sprintf("invalid assertion type %q", assertion.Type)
+		if suggestion != "" {
+			msg += fmt.Sprintf(" (did you mean %q?)", suggestion)
+		}
+		errors = append(errors, ValidationError{
+			Field:   field + ".type",
+			Message: msg,
+			Level:   ValidationLevelError,
+		})
+	}
+
+	if assertion.Value == nil {
+		errors = append(errors, ValidationError{
+			Field:   field + ".value",
+			Message: "assertion must have a value",
+			Level:   ValidationLevelError,
+		})
+	}
+
+	return errors
+}
+
+// isValidAssertionType checks if the assertion type is valid.
+func isValidAssertionType(t string) bool {
+	for _, valid := range ValidAssertionTypes {
+		if t == valid {
+			return true
+		}
+	}
+	return false
+}
+
+// suggestAssertionType suggests a valid assertion type based on the invalid input.
+func suggestAssertionType(invalid string) string {
+	// Normalize input for comparison
+	normalized := strings.ToLower(strings.ReplaceAll(invalid, "_", "-"))
+
+	// Check for exact match after normalization
+	for _, valid := range ValidAssertionTypes {
+		if normalized == valid {
+			return valid
+		}
+	}
+
+	// Check for partial matches
+	for _, valid := range ValidAssertionTypes {
+		if strings.Contains(normalized, strings.ReplaceAll(valid, "-", "")) ||
+			strings.Contains(strings.ReplaceAll(valid, "-", ""), normalized) {
+			return valid
+		}
+	}
+
+	// Check for common typos
+	typoMap := map[string]string{
+		"llm_rubric":   "llm-rubric",
+		"llmrubric":    "llm-rubric",
+		"rubric":       "llm-rubric",
+		"contain":      "contains",
+		"notcontains":  "not-contains",
+		"not_contains": "not-contains",
+		"containsall":  "contains-all",
+		"containsany":  "contains-any",
+		"contains_all": "contains-all",
+		"contains_any": "contains-any",
+		"js":           "javascript",
+		"regexp":       "regex",
+	}
+
+	if suggestion, ok := typoMap[normalized]; ok {
+		return suggestion
+	}
+
+	return ""
+}
+
+// isValidName checks if a name follows naming conventions.
+func isValidName(name string) bool {
+	// Allow lowercase letters, numbers, and hyphens
+	matched, _ := regexp.MatchString(`^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$`, name)
+	return matched
+}
+
+// isValidTag checks if a tag follows naming conventions.
+func isValidTag(tag string) bool {
+	// Allow lowercase letters, numbers, and hyphens
+	matched, _ := regexp.MatchString(`^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$`, tag)
+	return matched
+}
+
+// HasErrors returns true if there are any errors (not just warnings).
+func HasErrors(errors []ValidationError) bool {
+	for _, err := range errors {
+		if err.Level == ValidationLevelError {
+			return true
+		}
+	}
+	return false
+}
+
+// CountByLevel counts errors and warnings separately.
+func CountByLevel(errors []ValidationError) (errorCount, warningCount int) {
+	for _, err := range errors {
+		if err.Level == ValidationLevelError {
+			errorCount++
+		} else {
+			warningCount++
+		}
+	}
+	return
 }

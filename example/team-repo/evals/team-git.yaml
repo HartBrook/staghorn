@@ -1,0 +1,41 @@
+name: team-git
+description: Verify team git conventions are followed
+tags: [git, team]
+
+# Tests aligned with the Git Conventions section of CLAUDE.md:
+# - Write commit messages in imperative mood
+# - Keep commits atomic and focused
+# - Reference issue numbers when applicable
+
+tests:
+  - name: uses-imperative-mood
+    description: Should write commit messages in imperative mood
+    prompt: |
+      Write a commit message for adding user authentication
+    assert:
+      - type: llm-rubric
+        value: Commit message uses imperative mood (e.g., "Add" not "Added" or "Adding")
+      - type: not-contains
+        value: Added
+
+  - name: keeps-commits-atomic
+    description: Should recommend atomic commits
+    prompt: |
+      I made these changes in one commit:
+      - Fixed login bug
+      - Added new dashboard feature
+      - Updated README
+      - Refactored database layer
+
+      Is this commit okay?
+    assert:
+      - type: llm-rubric
+        value: Response should recommend splitting into separate, focused commits
+
+  - name: references-issues
+    description: Should reference issue numbers when applicable
+    prompt: |
+      Write a commit message for fixing the bug described in issue #123
+    assert:
+      - type: contains-any
+        value: ["#123", "issue 123", "closes #123", "fixes #123"]

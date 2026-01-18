@@ -157,6 +157,8 @@ The layering means you get shared standards _plus_ your personal style. You neve
 | `stag eval`           | Run behavioral evals against your config          |
 | `stag eval init`      | Install starter evals                             |
 | `stag eval list`      | List available evals                              |
+| `stag eval validate`  | Validate eval definitions without running         |
+| `stag eval create`    | Create a new eval from a template                 |
 | `stag project`        | Manage project-level config                       |
 | `stag team`           | Bootstrap or validate a team standards repo       |
 | `stag version`        | Print version number                              |
@@ -676,6 +678,13 @@ stag eval list --source team   # Filter by source
 stag eval info <name>          # Show eval details
 stag eval init                 # Install starter evals
 stag eval init --project       # Install to project directory
+stag eval validate             # Validate all eval definitions
+stag eval validate <name>      # Validate specific eval
+stag eval create               # Create new eval (interactive)
+stag eval create --template security  # Create from template
+stag eval create --from <eval> # Copy from existing eval
+stag eval create --project     # Save to .staghorn/evals/
+stag eval create --team        # Save to ./evals/ for team sharing
 ```
 
 ## Installation

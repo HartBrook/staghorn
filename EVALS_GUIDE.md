@@ -12,6 +12,76 @@ Evals verify that your CLAUDE.md configuration produces the behavior you expect 
 
 Evals are **behavioral tests**, not unit tests. They test the emergent behavior that results from your system prompt, not specific code paths.
 
+## Creating Evals
+
+### Quick Start with Templates
+
+The fastest way to create a new eval is with the `create` command:
+
+```bash
+# Interactive wizard
+stag eval create
+
+# Use a specific template
+stag eval create --template security
+stag eval create --template quality
+stag eval create --template language
+stag eval create --template blank
+
+# Copy from an existing eval
+stag eval create --from security-secrets --name my-security
+
+# Save to project instead of personal directory
+stag eval create --project
+
+# Save to ./evals/ for team/community repos
+stag eval create --team
+```
+
+**Destination options:**
+- Default: `~/.config/staghorn/evals/` (personal evals)
+- `--project`: `.staghorn/evals/` (project-specific evals)
+- `--team`: `./evals/` (team/community evals for sharing via git)
+
+Available templates:
+- **security** — Tests for hardcoded secrets, injection vulnerabilities
+- **quality** — Tests for naming conventions, code duplication
+- **language** — Language-specific best practices template
+- **blank** — Minimal template to start from scratch
+
+### Validating Evals
+
+Before running evals (which consume API credits), validate them:
+
+```bash
+# Validate all evals
+stag eval validate
+
+# Validate a specific eval
+stag eval validate my-custom-eval
+```
+
+Validation checks for:
+- Valid assertion types (`llm-rubric`, `contains`, `regex`, etc.)
+- Required fields (`name`, `prompt`, `assert`)
+- Proper YAML structure
+- Naming conventions
+
+Example output:
+```
+Validating 25 eval(s)...
+
+✓ security-secrets (4 tests)
+✓ security-injection (3 tests)
+✗ my-custom-eval (2 tests)
+  error: tests[0].assert[0].type: invalid assertion type "llm_rubric" (did you mean "llm-rubric"?)
+  warning: tests[1]: test "check-patterns" should have a description
+
+23 valid, 1 invalid, 1 warning
+```
+
+The validator provides helpful suggestions for common typos (e.g., `llm_rubric` → `llm-rubric`).
+
 ## Anatomy of an Eval
 
 ```yaml
@@ -267,6 +337,16 @@ assert:
 
 ## Debugging Failed Tests
 
+### Step 0: Validate First
+
+Before debugging runtime failures, ensure your eval is valid:
+
+```bash
+stag eval validate my-eval
+```
+
+This catches common issues like typos in assertion types (e.g., `llm_rubric` instead of `llm-rubric`) without making API calls.
+
 ### Step 1: Run with `--debug`
 
 ```bash
@@ -484,6 +564,44 @@ Each test case = one API call. To minimize costs:
    ```
 
 4. **Leverage Promptfoo caching** - Repeated runs with same prompts use cached responses
+
+## Quick Reference
+
+### Commands
+
+```bash
+# Run evals
+stag eval                           # Run all evals
+stag eval security-secrets          # Run specific eval
+stag eval --tag security            # Filter by tag
+stag eval --test "warns-*"          # Filter by test name pattern
+stag eval --debug                   # Show full responses
+
+# Create and validate
+stag eval create                    # Interactive wizard
+stag eval create --template security
+stag eval create --project          # Save to .staghorn/evals/
+stag eval create --team             # Save to ./evals/ for team sharing
+stag eval validate                  # Validate all evals
+stag eval validate my-eval          # Validate specific eval
+
+# List and inspect
+stag eval list                      # List available evals
+stag eval info security-secrets     # Show eval details
+stag eval init                      # Install starter evals
+```
+
+### Valid Assertion Types
+
+| Type           | Description                          |
+|----------------|--------------------------------------|
+| `llm-rubric`   | AI-graded evaluation (most flexible) |
+| `contains`     | Exact string match                   |
+| `contains-any` | Any of the listed strings            |
+| `contains-all` | All of the listed strings            |
+| `not-contains` | String must not appear               |
+| `regex`        | Regular expression match             |
+| `javascript`   | Custom JS assertion function         |
 
 ## Further Reading
 

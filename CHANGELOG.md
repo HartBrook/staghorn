@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-01-18
+
+### Added
+
+- `stag eval validate` command to validate eval YAML files before running
+  - Checks assertion types, required fields, YAML structure, and naming conventions
+  - Provides helpful suggestions for common typos (e.g., `llm_rubric` → `llm-rubric`)
+  - Distinguishes between errors (blocking) and warnings (non-blocking)
+- `stag eval create` command to create new evals from templates
+  - Interactive wizard for guided eval creation
+  - Four built-in templates: security, quality, language, blank
+  - `--template` flag to skip wizard and use template directly
+  - `--from` flag to copy and customize existing evals
+  - `--name` and `--description` flags for non-interactive creation
+- `--project` flag for `stag eval create` to save evals to `.staghorn/evals/`
+- `--team` flag for `stag eval create` to save evals to `./evals/` for team/community sharing
+- Example evals in `example/team-repo/evals/` demonstrating team eval patterns
+
+### Changed
+
+- Updated EVALS_GUIDE.md with comprehensive documentation for validate and create commands
+- Expanded CLI flags reference in README.md with new eval commands
+
 ## [0.4.0] - 2026-01-17
 
 ### Added
@@ -75,7 +98,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for team, personal, and project configuration layers
 - Automatic CLAUDE.md generation with layered content
 
-[Unreleased]: https://github.com/HartBrook/staghorn/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/HartBrook/staghorn/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/HartBrook/staghorn/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/HartBrook/staghorn/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/HartBrook/staghorn/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/HartBrook/staghorn/compare/v0.1.0...v0.2.0

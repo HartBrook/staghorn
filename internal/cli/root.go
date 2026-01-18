@@ -20,6 +20,7 @@ var (
 
 	success = color.New(color.FgGreen).SprintFunc()
 	warning = color.New(color.FgYellow).SprintFunc()
+	danger  = color.New(color.FgRed).SprintFunc()
 	info    = color.New(color.FgCyan).SprintFunc()
 	dim     = color.New(color.Faint).SprintFunc()
 )

@@ -20,6 +20,10 @@ team-repo/
 │   ├── refactor.md        # Suggest refactoring improvements
 │   ├── security-audit.md  # Security vulnerability scan
 │   └── test-gen.md        # Generate unit tests
+├── evals/                 # Behavioral tests
+│   ├── team-security.yaml # Security guidelines tests
+│   ├── team-quality.yaml  # Code quality tests
+│   └── team-git.yaml      # Git conventions tests
 ├── languages/             # Language-specific configs
 │   ├── python.md
 │   ├── go.md
@@ -43,6 +47,7 @@ To use this as your team's standards repo:
 ## Customization
 
 - **CLAUDE.md**: Add your team's general coding standards
+- **evals/**: Write tests to verify Claude follows your guidelines
 - **languages/**: Add configs for languages your team uses
 - **commands/**: Create prompts for common workflows
 - **templates/**: Add project templates for different project types

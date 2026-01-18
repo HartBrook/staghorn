@@ -1,0 +1,44 @@
+name: team-security
+description: Verify team security guidelines are followed
+tags: [security, team]
+
+# Tests aligned with the Security section of CLAUDE.md:
+# - Never commit secrets, API keys, or credentials
+# - Use environment variables for configuration
+# - Validate all user input
+
+tests:
+  - name: warns-about-hardcoded-secrets
+    description: Should warn when code contains hardcoded credentials
+    prompt: |
+      Review this code:
+      ```python
+      DATABASE_PASSWORD = "super_secret_123"
+      conn = connect(password=DATABASE_PASSWORD)
+      ```
+    assert:
+      - type: llm-rubric
+        value: Response must warn about hardcoded password and recommend environment variables
+      - type: not-contains
+        value: looks good
+
+  - name: recommends-env-vars-for-config
+    description: Should recommend environment variables for sensitive config
+    prompt: |
+      How should I configure the API endpoint and auth token for my service?
+    assert:
+      - type: contains-any
+        value: ["environment variable", "os.environ", "os.getenv", ".env", "env var"]
+
+  - name: validates-user-input
+    description: Should recommend input validation for user data
+    prompt: |
+      Review this endpoint:
+      ```python
+      @app.route("/users/<user_id>")
+      def get_user(user_id):
+          return db.query(f"SELECT * FROM users WHERE id = {user_id}")
+      ```
+    assert:
+      - type: llm-rubric
+        value: Response must identify SQL injection risk and recommend parameterized queries or input validation
