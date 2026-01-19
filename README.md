@@ -151,6 +151,7 @@ The layering means you get shared standards _plus_ your personal style. You neve
 | `stag edit`           | Edit personal config (auto-applies on save)       |
 | `stag edit -l <lang>` | Edit personal language config (e.g., `-l python`) |
 | `stag info`           | Show current config state                         |
+| `stag optimize`       | Compress config to reduce token usage             |
 | `stag languages`      | Show detected and configured languages            |
 | `stag commands`       | List available commands                           |
 | `stag run <command>`  | Run a command (outputs prompt to stdout)          |
@@ -175,6 +176,57 @@ stag info
 # Add personal preferences (auto-applies)
 stag edit
 ```
+
+### Optimizing Large Configs
+
+Large configs consume more tokens in Claude's context window. If `stag info` shows your config exceeds 3,000 tokens, consider optimizing:
+
+```bash
+# Analyze merged config (informational, no changes)
+stag optimize
+
+# Show before/after diff
+stag optimize --diff
+
+# Optimize and save personal config
+stag optimize --layer personal --apply
+
+# Optimize and save team config
+stag optimize --layer team --apply
+
+# Fast mode: deterministic cleanup only (no API calls)
+stag optimize --deterministic --layer personal --apply
+```
+
+The optimizer:
+1. **Pre-processes** — Removes duplicate rules, collapses whitespace, strips verbose phrases
+2. **Uses Claude** — Intelligently compresses content while preserving meaning (unless `--deterministic`)
+3. **Validates** — Ensures critical content is preserved (see [Anchor Validation](#anchor-validation) below)
+
+**Note:** `CLAUDE.md` files are managed by staghorn and regenerated on each sync. To persist optimizations, use `--apply` with `--layer personal` or `--layer team` to optimize the source files. The `--layer merged` option (default) is for analysis only.
+
+### Anchor Validation
+
+After optimization, staghorn validates that "critical content" wasn't removed. Anchors are categorized by strictness:
+
+| Anchor Type | Examples | Strictness | Behavior |
+|-------------|----------|------------|----------|
+| **File paths** | `~/.config/app.yaml`, `./src/main.go` | Strict | Missing = error |
+| **Commands** | `go test ./...`, `npm run build` | Strict | Missing = error |
+| **Function/class names** | `ProcessPayment`, `UserService` | Strict | Missing = error |
+| **Tool names** | `pytest`, `ruff`, `golangci-lint` | Soft | Missing = warning |
+
+**Strict anchors** (file paths, commands, function names) are project-specific and must be preserved exactly. If missing, optimization fails unless `--force` is used.
+
+**Soft anchors** (tool names) may be consolidated or rephrased by the LLM. Missing tool names generate informational messages but don't fail validation. This allows the optimizer to combine rules like "use black, isort, ruff" without triggering errors.
+
+**What's NOT extracted** (to avoid false positives):
+
+Generic variable names commonly used in code examples are filtered out because they're illustrative, not project-specific. This includes: `config`, `data`, `result`, `user`, `value`, `input`, `output`, `err`, `ctx`, `req`, `res`, `opts`, `args`, `params`, and common single-letter variables (`i`, `j`, `x`, `y`, etc.).
+
+This means if a code example uses `const config = {...}` and the optimizer restructures it to `const settings = {...}`, validation won't fail — these are interchangeable example names, not critical identifiers.
+
+If validation fails unexpectedly, use `--force` to apply anyway or `--deterministic` for safer optimization.
 
 ## Customization
 
@@ -576,10 +628,10 @@ Output formats:
 
 ### Environment Variables
 
-| Variable              | Description                                        |
-| --------------------- | -------------------------------------------------- |
-| `ANTHROPIC_API_KEY`   | Required for running evals                         |
-| `STAGHORN_EVAL_MODEL` | Model to use (default: `claude-sonnet-4-20250514`) |
+| Variable              | Description                                                    |
+| --------------------- | -------------------------------------------------------------- |
+| `ANTHROPIC_API_KEY`   | Required for running evals and `stag optimize`                 |
+| `STAGHORN_EVAL_MODEL` | Model to use for evals (default: `claude-sonnet-4-20250514`)   |
 
 ## Configuration Reference
 
@@ -622,6 +674,7 @@ languages:
 | `~/.config/staghorn/commands/`   | Personal commands                     |
 | `~/.config/staghorn/languages/`  | Personal language configs             |
 | `~/.config/staghorn/evals/`      | Personal evals                        |
+| `~/.config/staghorn/optimized/`  | Cached optimization results           |
 | `~/.cache/staghorn/`             | Cached team/community configs         |
 | `~/.claude/CLAUDE.md`            | **Output** — merged global config     |
 | `.staghorn/project.md`           | Project config source (you edit this) |
@@ -657,6 +710,17 @@ stag edit --no-apply       # Edit without auto-applying
 stag info --content        # Show full merged config
 stag info --layer team     # Show only team config (also: personal, project)
 stag info --sources        # Annotate output with source information
+
+# Optimize options
+stag optimize                  # Analyze merged config (informational)
+stag optimize --diff           # Show before/after diff
+stag optimize --layer personal --apply  # Optimize and save personal config
+stag optimize --layer team --apply      # Optimize and save team config
+stag optimize --deterministic  # No LLM, just cleanup (fast, no API key needed)
+stag optimize --target 2000    # Target specific token count
+stag optimize --force          # Re-optimize even if cache is valid
+stag optimize --no-cache       # Skip cache read/write
+stag optimize -o output.md     # Write to custom file
 
 # Command options
 stag commands --tag security   # Filter commands by tag
@@ -756,6 +820,12 @@ Evals require Promptfoo. Install with `npm install -g promptfoo`.
 
 **Evals failing unexpectedly**
 Use `stag eval --debug` to see full Claude responses and preserve temp files for inspection. Check `ANTHROPIC_API_KEY` is set. See the [Evals Guide](EVALS_GUIDE.md) for debugging strategies.
+
+**"Optimization removed critical content"**
+The optimizer validates that tool names, file paths, and commands are preserved. See [Anchor Validation](#anchor-validation) for what's considered critical content. Generic variable names in code examples (like `config`, `data`, `user`) are intentionally excluded to avoid false positives. If validation still fails, use `--force` to apply anyway, or use `--deterministic` for a safer (but less aggressive) optimization.
+
+**Optimize not reducing tokens much**
+Try without `--deterministic` to enable LLM-powered compression. The deterministic mode only does cleanup (whitespace, duplicates, verbose phrases).
 
 ## License
 

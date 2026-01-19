@@ -22,6 +22,14 @@ type CacheConfig struct {
 	TTL string `yaml:"ttl"` // e.g., "24h"
 }
 
+// OptimizeConfig contains optimization settings.
+type OptimizeConfig struct {
+	WarnThreshold     int    `yaml:"warn_threshold,omitempty"`     // Token threshold for warning (default: 3000)
+	TargetTokens      int    `yaml:"target_tokens,omitempty"`      // Default target token count
+	Model             string `yaml:"model,omitempty"`              // Model for optimization
+	DeterministicOnly bool   `yaml:"deterministic_only,omitempty"` // Skip LLM, only do deterministic cleanup
+}
+
 // Config represents the staghorn configuration file.
 type Config struct {
 	Version int `yaml:"version"`
@@ -36,6 +44,7 @@ type Config struct {
 
 	Cache     CacheConfig    `yaml:"cache"`
 	Languages LanguageConfig `yaml:"languages,omitempty"`
+	Optimize  OptimizeConfig `yaml:"optimize,omitempty"`
 }
 
 // Default values.

@@ -7,15 +7,18 @@ import "fmt"
 type ErrorCode string
 
 const (
-	ErrConfigNotFound    ErrorCode = "CONFIG_NOT_FOUND"
-	ErrConfigInvalid     ErrorCode = "CONFIG_INVALID"
-	ErrGitHubAuthFailed  ErrorCode = "GITHUB_AUTH_FAILED"
-	ErrGitHubFetchFailed ErrorCode = "GITHUB_FETCH_FAILED"
-	ErrCacheNotFound     ErrorCode = "CACHE_NOT_FOUND"
-	ErrCacheStale        ErrorCode = "CACHE_STALE"
-	ErrNoNetwork         ErrorCode = "NO_NETWORK"
-	ErrProjectNotFound   ErrorCode = "PROJECT_NOT_FOUND"
-	ErrInvalidRepo       ErrorCode = "INVALID_REPO"
+	ErrConfigNotFound      ErrorCode = "CONFIG_NOT_FOUND"
+	ErrConfigInvalid       ErrorCode = "CONFIG_INVALID"
+	ErrGitHubAuthFailed    ErrorCode = "GITHUB_AUTH_FAILED"
+	ErrGitHubFetchFailed   ErrorCode = "GITHUB_FETCH_FAILED"
+	ErrCacheNotFound       ErrorCode = "CACHE_NOT_FOUND"
+	ErrCacheStale          ErrorCode = "CACHE_STALE"
+	ErrNoNetwork           ErrorCode = "NO_NETWORK"
+	ErrProjectNotFound     ErrorCode = "PROJECT_NOT_FOUND"
+	ErrInvalidRepo         ErrorCode = "INVALID_REPO"
+	ErrAnthropicAuthFailed ErrorCode = "ANTHROPIC_AUTH_FAILED"
+	ErrOptimizationFailed  ErrorCode = "OPTIMIZATION_FAILED"
+	ErrValidationFailed    ErrorCode = "VALIDATION_FAILED"
 )
 
 // StaghornError represents a typed error with user-friendly hints.
@@ -109,5 +112,33 @@ func InvalidRepo(repo string) *StaghornError {
 		Code:    ErrInvalidRepo,
 		Message: fmt.Sprintf("invalid repository format: %s", repo),
 		Hint:    "Use format: github.com/owner/repo or owner/repo",
+	}
+}
+
+// AnthropicAuthFailed returns an error for missing Anthropic API key.
+func AnthropicAuthFailed() *StaghornError {
+	return &StaghornError{
+		Code:    ErrAnthropicAuthFailed,
+		Message: "Anthropic API authentication failed",
+		Hint:    "Set ANTHROPIC_API_KEY environment variable",
+	}
+}
+
+// OptimizationFailed returns an error when optimization fails.
+func OptimizationFailed(reason string, cause error) *StaghornError {
+	return &StaghornError{
+		Code:    ErrOptimizationFailed,
+		Message: fmt.Sprintf("optimization failed: %s", reason),
+		Hint:    "Try --deterministic mode or check your ANTHROPIC_API_KEY",
+		Cause:   cause,
+	}
+}
+
+// ValidationFailed returns an error when optimized content fails validation.
+func ValidationFailed(missing []string) *StaghornError {
+	return &StaghornError{
+		Code:    ErrValidationFailed,
+		Message: fmt.Sprintf("optimization removed critical content: %v", missing),
+		Hint:    "Use --force to apply anyway, or report this issue",
 	}
 }

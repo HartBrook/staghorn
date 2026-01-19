@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-01-19
+
+### Added
+
+- `stag optimize` command to compress configs and reduce token usage in Claude's context window
+  - LLM-powered optimization preserves semantic meaning while reducing size
+  - Anchor validation ensures critical content (tool names, file paths, commands) is preserved
+  - `--deterministic` mode for fast cleanup without API calls
+  - `--layer` flag to optimize team, personal, or merged configs
+  - `--apply` flag to save optimized content back to source
+  - Caching layer avoids re-optimizing unchanged content
+- Token count display in `stag info` output with warning when exceeding 3,000 tokens
+- Optimization suggestion in `stag sync` output for large configs
+
+### Changed
+
+- `stag info` now shows merged config size in tokens
+- Updated README with optimize command documentation and troubleshooting
+
 ## [0.5.0] - 2026-01-18
 
 ### Added
@@ -98,7 +117,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for team, personal, and project configuration layers
 - Automatic CLAUDE.md generation with layered content
 
-[Unreleased]: https://github.com/HartBrook/staghorn/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/HartBrook/staghorn/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/HartBrook/staghorn/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/HartBrook/staghorn/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/HartBrook/staghorn/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/HartBrook/staghorn/compare/v0.2.0...v0.3.0
