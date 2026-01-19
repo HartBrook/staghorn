@@ -44,6 +44,7 @@ configs on top, and outputs a merged file for Claude to consume.`,
 	rootCmd.AddCommand(NewSearchCmd())
 	rootCmd.AddCommand(NewEditCmd())
 	rootCmd.AddCommand(NewInfoCmd())
+	rootCmd.AddCommand(NewOptimizeCmd())
 	rootCmd.AddCommand(NewProjectCmd())
 	rootCmd.AddCommand(NewCommandsCmd())
 	rootCmd.AddCommand(NewRunCmd())

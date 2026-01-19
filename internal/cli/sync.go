@@ -15,6 +15,7 @@ import (
 	"github.com/HartBrook/staghorn/internal/github"
 	"github.com/HartBrook/staghorn/internal/language"
 	"github.com/HartBrook/staghorn/internal/merge"
+	"github.com/HartBrook/staghorn/internal/optimize"
 	"github.com/spf13/cobra"
 )
 
@@ -214,6 +215,11 @@ func runSync(ctx context.Context, opts *syncOptions) error {
 			printSuccess("Synced %d commands to Claude Code", claudeCount)
 			fmt.Printf("  %s Use /%s in Claude Code\n", dim("Tip:"), "code-review")
 		}
+	}
+
+	// Check merged config size and suggest optimization if large
+	if !opts.fetchOnly {
+		checkConfigSizeAndSuggestOptimize(cfg, paths, owner, repo)
 	}
 
 	return nil
@@ -663,4 +669,64 @@ func stripInstructionalComments(content string) string {
 	}
 
 	return strings.Join(result, "\n")
+}
+
+// checkConfigSizeAndSuggestOptimize checks merged config size and suggests optimization if large.
+func checkConfigSizeAndSuggestOptimize(cfg *config.Config, paths *config.Paths, owner, repo string) {
+	// Build merged content to calculate size
+	var layers []merge.Layer
+
+	// Team layer
+	c := cache.New(paths)
+	if teamContent, _, err := c.Read(owner, repo); err == nil && teamContent != "" {
+		layers = append(layers, merge.Layer{Content: teamContent, Source: "team"})
+	}
+
+	// Personal layer
+	if personalContent, err := os.ReadFile(paths.PersonalMD); err == nil {
+		layers = append(layers, merge.Layer{Content: string(personalContent), Source: "personal"})
+	}
+
+	if len(layers) == 0 {
+		return
+	}
+
+	// Get active languages
+	teamLangDir := paths.TeamLanguagesDir(owner, repo)
+	personalLangDir := paths.PersonalLanguages
+
+	var activeLanguages []string
+	var languageFiles map[string][]*language.LanguageFile
+
+	if len(cfg.Languages.Enabled) > 0 {
+		activeLanguages = language.FilterDisabled(cfg.Languages.Enabled, cfg.Languages.Disabled)
+	} else {
+		activeLanguages, _ = language.ListAvailableLanguages(teamLangDir, personalLangDir, "")
+		activeLanguages = language.FilterDisabled(activeLanguages, cfg.Languages.Disabled)
+	}
+
+	if len(activeLanguages) > 0 {
+		languageFiles, _ = language.LoadLanguageFiles(
+			activeLanguages,
+			teamLangDir,
+			personalLangDir,
+			"",
+		)
+	}
+
+	mergeOpts := merge.MergeOptions{
+		Languages:     activeLanguages,
+		LanguageFiles: languageFiles,
+	}
+
+	merged := merge.MergeWithLanguages(layers, mergeOpts)
+	tokens := optimize.CountTokens(merged)
+
+	// Warn if over threshold
+	if tokens > 3000 {
+		fmt.Println()
+		printWarning("Merged config is %d tokens (threshold: 3,000)", tokens)
+		fmt.Printf("  Large configs may reduce Claude Code effectiveness.\n")
+		fmt.Printf("  Run %s to compress.\n", info("staghorn optimize"))
+	}
 }

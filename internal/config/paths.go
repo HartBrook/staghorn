@@ -80,6 +80,21 @@ func (p *Paths) TeamEvalsDir(owner, repo string) string {
 	return filepath.Join(p.CacheDir, fmt.Sprintf("%s-%s-evals", owner, repo))
 }
 
+// OptimizedDir returns the path for optimized config storage.
+func (p *Paths) OptimizedDir() string {
+	return filepath.Join(p.ConfigDir, "optimized")
+}
+
+// OptimizedFile returns the path for an optimized config file.
+func (p *Paths) OptimizedFile(owner, repo string) string {
+	return filepath.Join(p.OptimizedDir(), fmt.Sprintf("%s-%s.md", owner, repo))
+}
+
+// OptimizedMetaFile returns the path for optimization metadata sidecar.
+func (p *Paths) OptimizedMetaFile(owner, repo string) string {
+	return filepath.Join(p.OptimizedDir(), fmt.Sprintf("%s-%s.meta.json", owner, repo))
+}
+
 // ClaudeCommandsDir returns the path for Claude Code custom commands.
 func (p *Paths) ClaudeCommandsDir() string {
 	home := os.Getenv("HOME")

@@ -12,6 +12,7 @@ import (
 	"github.com/HartBrook/staghorn/internal/github"
 	"github.com/HartBrook/staghorn/internal/language"
 	"github.com/HartBrook/staghorn/internal/merge"
+	"github.com/HartBrook/staghorn/internal/optimize"
 	"github.com/spf13/cobra"
 )
 
@@ -257,11 +258,25 @@ func showCompactStatus(cfg *config.Config, paths *config.Paths, owner, repo stri
 		langStatus = strings.Join(activeLanguages, ", ")
 	}
 
+	// Calculate merged token count
+	mergedTokens := calculateMergedTokens(cfg, paths, owner, repo, activeLanguages)
+	tokenStatus := fmt.Sprintf("%d tokens", mergedTokens)
+	if mergedTokens > 3000 {
+		tokenStatus = warning(tokenStatus)
+	}
+
 	// Output
 	fmt.Printf("  %s: %s/%s (%s)\n", dim("Source"), owner, repo, sourceStatus)
 	fmt.Printf("  %s: %s\n", dim("Personal"), personalStatus)
 	fmt.Printf("  %s: %s\n", dim("Project"), projectStatus)
 	fmt.Printf("  %s: %s\n", dim("Languages"), langStatus)
+	fmt.Printf("  %s: %s\n", dim("Size"), tokenStatus)
+
+	// Suggest optimization if large
+	if mergedTokens > 3000 {
+		fmt.Println()
+		fmt.Printf("  %s Config exceeds 3,000 tokens. Consider running %s.\n", warningIcon, info("staghorn optimize"))
+	}
 
 	return nil
 }
@@ -352,6 +367,18 @@ func showVerboseStatus(cfg *config.Config, paths *config.Paths, owner, repo stri
 	fmt.Println("Authentication:")
 	printInfo("Method", github.AuthMethod())
 
+	// Token count
+	fmt.Println()
+	fmt.Println("Token usage:")
+	mergedTokens := calculateMergedTokens(cfg, paths, owner, repo, activeLanguages)
+	tokenStr := fmt.Sprintf("%d tokens", mergedTokens)
+	if mergedTokens > 3000 {
+		printInfo("Merged size", warning(tokenStr))
+		fmt.Printf("              %s Config exceeds 3,000 tokens. Consider running %s.\n", warningIcon, info("staghorn optimize"))
+	} else {
+		printInfo("Merged size", tokenStr)
+	}
+
 	return nil
 }
 
@@ -380,4 +407,53 @@ func findProjectConfig() string {
 		}
 		dir = parent
 	}
+}
+
+// calculateMergedTokens computes the token count for the merged config.
+func calculateMergedTokens(cfg *config.Config, paths *config.Paths, owner, repo string, activeLanguages []string) int {
+	var layers []merge.Layer
+
+	// Team layer
+	c := cache.New(paths)
+	if teamContent, _, err := c.Read(owner, repo); err == nil && teamContent != "" {
+		layers = append(layers, merge.Layer{Content: teamContent, Source: "team"})
+	}
+
+	// Personal layer
+	if personalContent, err := os.ReadFile(paths.PersonalMD); err == nil {
+		layers = append(layers, merge.Layer{Content: string(personalContent), Source: "personal"})
+	}
+
+	// Project layer
+	if projectPath := findProjectConfig(); projectPath != "" {
+		if projectContent, err := os.ReadFile(projectPath); err == nil {
+			layers = append(layers, merge.Layer{Content: string(projectContent), Source: "project"})
+		}
+	}
+
+	if len(layers) == 0 {
+		return 0
+	}
+
+	// Load language files
+	var languageFiles map[string][]*language.LanguageFile
+	if len(activeLanguages) > 0 {
+		projectRoot := findProjectRoot()
+		projectPaths := config.NewProjectPaths(projectRoot)
+		languageFiles, _ = language.LoadLanguageFiles(
+			activeLanguages,
+			paths.TeamLanguagesDir(owner, repo),
+			paths.PersonalLanguages,
+			projectPaths.LanguagesDir,
+		)
+	}
+
+	mergeOpts := merge.MergeOptions{
+		SourceRepo:    fmt.Sprintf("%s/%s", owner, repo),
+		Languages:     activeLanguages,
+		LanguageFiles: languageFiles,
+	}
+
+	merged := merge.MergeWithLanguages(layers, mergeOpts)
+	return optimize.CountTokens(merged)
 }
