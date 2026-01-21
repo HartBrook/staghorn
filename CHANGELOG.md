@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-01-20
+
+### Added
+
+- **Provenance tracking** for merged configs
+  - Merged CLAUDE.md now includes `<!-- staghorn:source:LAYER -->` comments marking content origin
+  - Language-specific content uses extended markers: `<!-- staghorn:source:LAYER:LANGUAGE -->` (e.g., `team:python`)
+  - New `merge.ParseProvenance()` and `merge.ParseProvenanceSections()` functions to extract content by source
+  - `merge.ListSources()` returns unique full sources (e.g., "team", "team:python") in order of appearance
+  - `merge.ListLayers()` returns unique layers (team, personal, project) ignoring language subsections
+  - `merge.ParseProvenanceByLayer()` aggregates content by layer for extraction
+  - `merge.HasProvenance()` checks if content has provenance markers
+  - Enables tooling to understand which layer contributed each section
+
+- **Source repo detection** with `.staghorn/source.yaml`
+  - `stag team init` now creates `.staghorn/source.yaml` to mark team/community repos
+  - `config.IsSourceRepo()` detects source repos for special handling
+  - `stag team validate` checks for source repo marker
+
+- **Source repo mode** for seamless team repo development
+  - When inside a source repo, commands operate on local files instead of cache:
+    - `stag edit team` opens `./CLAUDE.md` directly (previously read-only)
+    - `stag info --layer team` reads from `./CLAUDE.md`
+    - `stag optimize --layer team` reads/writes `./CLAUDE.md`
+    - `stag eval --layer team` tests local content
+  - Enables natural edit-test-commit workflow for maintaining team standards
+
+- **Provenance-aware optimization** for merged configs
+  - `stag optimize --apply` now works with `--layer merged` (the default)
+  - Optimized content is split by provenance markers and written back to each source layer
+  - Enables optimizing the full merged config while preserving layer separation
+
+- **Project layer optimization** support
+  - `stag optimize --layer project --apply` now saves optimized content to `.staghorn/project.md`
+
+### Changed
+
+- `stag sync` now generates CLAUDE.md with provenance comments by default
+- Merge options include `AnnotateSources` flag to control provenance comment generation
+- **Language sections are now top-level H2 headers** instead of nested under `## Language-Specific Guidelines`
+  - Each language (Python, Go, TypeScript, etc.) becomes its own `## {Language}` section
+  - Content headers within language files are demoted one level (e.g., `##` → `###`) to maintain valid hierarchy
+  - Personal additions use `### Personal Additions` sub-headers
+  - This creates cleaner, flatter document structure optimized for Claude Code
+
 ## [0.6.0] - 2026-01-19
 
 ### Added
@@ -117,7 +162,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for team, personal, and project configuration layers
 - Automatic CLAUDE.md generation with layered content
 
-[Unreleased]: https://github.com/HartBrook/staghorn/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/HartBrook/staghorn/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/HartBrook/staghorn/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/HartBrook/staghorn/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/HartBrook/staghorn/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/HartBrook/staghorn/compare/v0.3.0...v0.4.0

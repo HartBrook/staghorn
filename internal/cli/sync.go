@@ -435,7 +435,7 @@ func syncClaudeCommands(paths *config.Paths, owner, repo string) (int, error) {
 
 		// Check for collision with non-staghorn file
 		if existingContent, err := os.ReadFile(outputPath); err == nil {
-			if !strings.Contains(string(existingContent), "Managed by staghorn") {
+			if !strings.Contains(string(existingContent), merge.HeaderManagedPrefix) {
 				// File exists and is not managed by staghorn - skip with warning
 				printWarning("Skipping /%s: existing command not managed by staghorn", cmd.Name)
 				continue
@@ -508,14 +508,13 @@ func applyConfig(cfg *config.Config, paths *config.Paths, owner, repo string) er
 		{Content: string(personalConfig), Source: "personal"},
 	}
 	mergeOpts := merge.MergeOptions{
-		Languages:     activeLanguages,
-		LanguageFiles: languageFiles,
+		AnnotateSources: true,
+		SourceRepo:      cfg.SourceRepo(),
+		Languages:       activeLanguages,
+		LanguageFiles:   languageFiles,
 	}
 	merged := merge.MergeWithLanguages(layers, mergeOpts)
-
-	// Add header comment
-	header := fmt.Sprintf("<!-- Managed by staghorn | Source: %s | Do not edit directly -->\n\n", cfg.SourceRepo())
-	output := header + merged
+	output := merged
 
 	// Ensure ~/.claude directory exists
 	claudeDir := filepath.Join(os.Getenv("HOME"), ".claude")
@@ -530,7 +529,7 @@ func applyConfig(cfg *config.Config, paths *config.Paths, owner, repo string) er
 		needsPrompt := false
 		promptReason := ""
 
-		if !strings.Contains(existingStr, "Managed by staghorn") {
+		if !strings.Contains(existingStr, merge.HeaderManagedPrefix) {
 			// File exists but isn't managed by staghorn
 			needsPrompt = true
 			promptReason = "Found existing ~/.claude/CLAUDE.md not managed by staghorn"
@@ -565,7 +564,7 @@ func applyConfig(cfg *config.Config, paths *config.Paths, owner, repo string) er
 			case "1", "":
 				// Migrate to personal config - strip the staghorn header first if present
 				contentToMigrate := existingStr
-				if strings.Contains(existingStr, "Managed by staghorn") {
+				if strings.Contains(existingStr, merge.HeaderManagedPrefix) {
 					// Find end of header line and skip it
 					if idx := strings.Index(existingStr, "-->\n"); idx != -1 {
 						contentToMigrate = strings.TrimLeft(existingStr[idx+4:], "\n")
@@ -593,7 +592,7 @@ func applyConfig(cfg *config.Config, paths *config.Paths, owner, repo string) er
 				personalConfig, _ = os.ReadFile(paths.PersonalMD)
 				layers[1] = merge.Layer{Content: string(personalConfig), Source: "personal"}
 				merged = merge.MergeWithLanguages(layers, mergeOpts)
-				output = header + merged
+				output = merged
 
 			case "2":
 				// Back up and continue
@@ -715,8 +714,9 @@ func checkConfigSizeAndSuggestOptimize(cfg *config.Config, paths *config.Paths, 
 	}
 
 	mergeOpts := merge.MergeOptions{
-		Languages:     activeLanguages,
-		LanguageFiles: languageFiles,
+		AnnotateSources: true,
+		Languages:       activeLanguages,
+		LanguageFiles:   languageFiles,
 	}
 
 	merged := merge.MergeWithLanguages(layers, mergeOpts)

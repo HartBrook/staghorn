@@ -14,6 +14,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// mergedLayerApplyNote provides guidance when applying merged layer optimization.
+const mergedLayerApplyNote = `Applying merged optimization back to source layers...
+
+The optimized merged content will be split by provenance markers and
+written back to each source layer (team, personal).`
+
 type optimizeOptions struct {
 	layer         string
 	target        int
@@ -47,14 +53,16 @@ The optimization process:
 4. Validates that critical content is preserved
 
 Note: CLAUDE.md files are managed by staghorn and regenerated on sync.
-Use --apply with --layer team or --layer personal to optimize source files.
-The --layer merged option is for analysis only (no source file to update).
+Use --apply with any layer to optimize source files. When using --layer merged
+with --apply, the optimized content is split by provenance markers and written
+back to each source layer (team, personal).
 
 Use --deterministic for fast, repeatable optimization without LLM calls.`,
 		Example: `  staghorn optimize                          # Analyze merged config (informational)
   staghorn optimize --diff                   # Show before/after diff
   staghorn optimize --layer personal --apply # Optimize and save personal config
   staghorn optimize --layer team --apply     # Optimize and save team config
+  staghorn optimize --apply                  # Optimize merged and apply to all source layers
   staghorn optimize --deterministic          # No LLM, just cleanup
   staghorn optimize --target 2000            # Target ~2000 tokens
   staghorn optimize -o optimized.md          # Write to custom file`,
@@ -78,19 +86,6 @@ Use --deterministic for fast, repeatable optimization without LLM calls.`,
 }
 
 func runOptimize(ctx context.Context, opts *optimizeOptions) error {
-	// Validate --apply with --layer merged
-	if opts.apply && opts.layer == "merged" {
-		fmt.Println(dim("Cannot apply optimization to merged layer."))
-		fmt.Println()
-		fmt.Println("The merged layer is derived from team and personal configs and has no")
-		fmt.Println("source file to update. Use one of these options instead:")
-		fmt.Println()
-		fmt.Println("  " + info("stag optimize --layer personal --apply") + "  # Optimize personal config")
-		fmt.Println("  " + info("stag optimize --layer team --apply") + "      # Optimize team config")
-		fmt.Println("  " + info("stag optimize -o output.md") + "              # Write to custom file")
-		return fmt.Errorf("cannot apply to merged layer")
-	}
-
 	// Check for API key (skip for deterministic mode or informational runs)
 	needsAPI := !opts.deterministic && (opts.apply || opts.output != "")
 	if needsAPI && os.Getenv("ANTHROPIC_API_KEY") == "" {
@@ -106,6 +101,8 @@ func runOptimize(ctx context.Context, opts *optimizeOptions) error {
 	}
 
 	paths := config.NewPaths()
+	projectRoot := findProjectRoot()
+	isSourceRepo := config.IsSourceRepo(projectRoot)
 
 	// Load config
 	cfg, err := config.Load()
@@ -119,7 +116,7 @@ func runOptimize(ctx context.Context, opts *optimizeOptions) error {
 	}
 
 	// Get content to optimize
-	content, err := getContentToOptimize(cfg, paths, owner, repo, opts.layer)
+	content, err := getContentToOptimize(cfg, paths, owner, repo, opts.layer, projectRoot, isSourceRepo)
 	if err != nil {
 		return err
 	}
@@ -156,7 +153,7 @@ func runOptimize(ctx context.Context, opts *optimizeOptions) error {
 	// Handle output
 	if opts.output != "" {
 		// Write to custom output file
-		if err := os.WriteFile(opts.output, []byte(result.OptimizedContent), 0644); err != nil {
+		if err := os.WriteFile(opts.output, []byte(result.OptimizedContent), config.DefaultFileMode); err != nil {
 			return fmt.Errorf("failed to write output: %w", err)
 		}
 		printSuccess("Wrote optimized config to %s", opts.output)
@@ -164,13 +161,24 @@ func runOptimize(ctx context.Context, opts *optimizeOptions) error {
 	}
 
 	if opts.apply {
+		// Handle merged layer specially - split by provenance
+		if opts.layer == "merged" {
+			return applyMergedOptimization(paths, owner, repo, result.OptimizedContent, opts.verbose, projectRoot, isSourceRepo)
+		}
+
 		// Apply optimization to source layer
-		if err := applyOptimization(paths, owner, repo, opts.layer, result.OptimizedContent); err != nil {
+		if err := applyOptimization(paths, owner, repo, opts.layer, result.OptimizedContent, projectRoot, isSourceRepo); err != nil {
 			return err
 		}
-		printSuccess("Applied optimization to %s layer", opts.layer)
-		fmt.Println()
-		fmt.Println(dim("Run 'stag sync' to regenerate CLAUDE.md with optimized content."))
+
+		// Show appropriate success message based on context
+		if opts.layer == "team" && isSourceRepo {
+			printSuccess("Applied optimization to ./CLAUDE.md")
+		} else {
+			printSuccess("Applied optimization to %s layer", opts.layer)
+			fmt.Println()
+			fmt.Println(dim("Run 'stag sync' to regenerate CLAUDE.md with optimized content."))
+		}
 		return nil
 	}
 
@@ -185,11 +193,21 @@ func runOptimize(ctx context.Context, opts *optimizeOptions) error {
 }
 
 // getContentToOptimize retrieves the content to optimize based on layer.
-func getContentToOptimize(cfg *config.Config, paths *config.Paths, owner, repo, layer string) (string, error) {
+func getContentToOptimize(cfg *config.Config, paths *config.Paths, owner, repo, layer, projectRoot string, isSourceRepo bool) (string, error) {
 	c := cache.New(paths)
 
 	switch layer {
 	case "team":
+		// Check if we're in a source repo
+		if isSourceRepo {
+			sourcePaths := config.NewSourceRepoPaths(projectRoot)
+			content, err := os.ReadFile(sourcePaths.ClaudeMD)
+			if err != nil {
+				return "", fmt.Errorf("failed to read team CLAUDE.md: %w", err)
+			}
+			return string(content), nil
+		}
+		// Fall back to cache
 		content, _, err := c.Read(owner, repo)
 		if err != nil {
 			return "", fmt.Errorf("team config not cached: %w", err)
@@ -229,7 +247,6 @@ func getContentToOptimize(cfg *config.Config, paths *config.Paths, owner, repo, 
 		}
 
 		// Get active languages
-		projectRoot := findProjectRoot()
 		langCfg := language.LanguageConfig{
 			AutoDetect: cfg.Languages.AutoDetect,
 			Enabled:    cfg.Languages.Enabled,
@@ -262,10 +279,23 @@ func getContentToOptimize(cfg *config.Config, paths *config.Paths, owner, repo, 
 }
 
 // applyOptimization saves optimized content back to the source layer.
-func applyOptimization(paths *config.Paths, owner, repo, layer, content string) error {
+func applyOptimization(paths *config.Paths, owner, repo, layer, content, projectRoot string, isSourceRepo bool) error {
+	// Guard against writing empty content
+	if strings.TrimSpace(content) == "" {
+		return fmt.Errorf("refusing to write empty content to %s layer", layer)
+	}
+
 	switch layer {
 	case "team":
-		// Update the team cache file
+		// Check if we're in a source repo
+		if isSourceRepo {
+			sourcePaths := config.NewSourceRepoPaths(projectRoot)
+			if err := os.WriteFile(sourcePaths.ClaudeMD, []byte(content), config.DefaultFileMode); err != nil {
+				return fmt.Errorf("failed to write CLAUDE.md: %w", err)
+			}
+			return nil
+		}
+		// Fall back to cache
 		c := cache.New(paths)
 		// Read existing metadata to preserve it
 		_, existingMeta, err := c.Read(owner, repo)
@@ -287,14 +317,105 @@ func applyOptimization(paths *config.Paths, owner, repo, layer, content string) 
 
 	case "personal":
 		// Update the personal.md file
-		if err := os.WriteFile(paths.PersonalMD, []byte(content), 0644); err != nil {
+		if err := os.WriteFile(paths.PersonalMD, []byte(content), config.DefaultFileMode); err != nil {
 			return fmt.Errorf("failed to write personal config: %w", err)
+		}
+		return nil
+
+	case "project":
+		// Update the project config file
+		if projectRoot == "" {
+			return fmt.Errorf("cannot apply to project layer: not in a project directory")
+		}
+		projectPaths := config.NewProjectPaths(projectRoot)
+		if err := os.WriteFile(projectPaths.SourceMD, []byte(content), config.DefaultFileMode); err != nil {
+			return fmt.Errorf("failed to write project config: %w", err)
 		}
 		return nil
 
 	default:
 		return fmt.Errorf("cannot apply to layer: %s", layer)
 	}
+}
+
+// applyMergedOptimization splits optimized merged content by provenance and applies to source layers.
+func applyMergedOptimization(paths *config.Paths, owner, repo, content string, verbose bool, projectRoot string, isSourceRepo bool) error {
+	// Check if content has provenance markers
+	if !merge.HasProvenance(content) {
+		fmt.Println(dim("Cannot apply optimization to merged layer."))
+		fmt.Println()
+		fmt.Println("The merged content has no provenance markers to identify which content")
+		fmt.Println("belongs to which source layer.")
+		fmt.Println()
+		fmt.Println(dim("Provenance markers look like: <!-- staghorn:source:team -->"))
+		fmt.Println()
+		fmt.Println("Use one of these options instead:")
+		fmt.Println()
+		fmt.Println("  " + info("stag optimize --layer personal --apply") + "  # Optimize personal config")
+		fmt.Println("  " + info("stag optimize --layer team --apply") + "      # Optimize team config")
+		fmt.Println("  " + info("stag optimize -o output.md") + "              # Write to custom file")
+		return fmt.Errorf("no provenance markers found in merged content")
+	}
+
+	if verbose {
+		fmt.Println(mergedLayerApplyNote)
+		fmt.Println()
+	}
+
+	// Parse provenance by layer (aggregates main content + language content per layer)
+	provenance := merge.ParseProvenanceByLayer(content)
+	layers := merge.ListLayers(content)
+
+	if len(provenance) == 0 {
+		return fmt.Errorf("no content found after parsing provenance")
+	}
+
+	if len(layers) == 0 {
+		return fmt.Errorf("no layers found in provenance markers")
+	}
+
+	// Track what was applied
+	var applied []string
+	var skippedEmpty []string
+
+	// Apply to each layer
+	for _, layer := range layers {
+		layerContent, ok := provenance[layer]
+		if !ok || strings.TrimSpace(layerContent) == "" {
+			skippedEmpty = append(skippedEmpty, layer)
+			continue
+		}
+
+		// Skip unknown layers
+		if layer != "team" && layer != "personal" && layer != "project" {
+			if verbose {
+				fmt.Printf("  Skipping unknown layer: %s\n", layer)
+			}
+			continue
+		}
+
+		if err := applyOptimization(paths, owner, repo, layer, layerContent, projectRoot, isSourceRepo); err != nil {
+			return fmt.Errorf("failed to apply %s layer: %w", layer, err)
+		}
+
+		applied = append(applied, layer)
+		if verbose {
+			fmt.Printf("  Applied to %s layer (%d bytes)\n", layer, len(layerContent))
+		}
+	}
+
+	if len(applied) == 0 {
+		if len(skippedEmpty) > 0 {
+			return fmt.Errorf("all layers had empty content after optimization: %s", strings.Join(skippedEmpty, ", "))
+		}
+		return fmt.Errorf("no valid source layers found to apply")
+	}
+
+	printSuccess("Applied optimization to %s", strings.Join(applied, ", "))
+	fmt.Println()
+	fmt.Println(dim("Run 'stag sync' to regenerate CLAUDE.md with optimized content."))
+
+	return nil
 }
 
 // displayOptimizationResult shows the optimization results.
@@ -354,13 +475,24 @@ func displayDiff(original, optimized string) {
 	shown := 0
 	maxDiff := 20
 
-	for i := 0; i < len(origLines) && shown < maxDiff; i++ {
-		if i >= len(optLines) || origLines[i] != optLines[i] {
+	maxLen := max(len(origLines), len(optLines))
+
+	for i := 0; i < maxLen && shown < maxDiff; i++ {
+		origLine := ""
+		optLine := ""
+		if i < len(origLines) {
+			origLine = origLines[i]
+		}
+		if i < len(optLines) {
+			optLine = optLines[i]
+		}
+
+		if origLine != optLine {
 			if i < len(origLines) {
-				fmt.Printf("%s %s\n", danger("-"), origLines[i])
+				fmt.Printf("%s %s\n", danger("-"), origLine)
 			}
 			if i < len(optLines) {
-				fmt.Printf("%s %s\n", success("+"), optLines[i])
+				fmt.Printf("%s %s\n", success("+"), optLine)
 			}
 			shown++
 		}

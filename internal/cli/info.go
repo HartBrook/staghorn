@@ -65,6 +65,7 @@ func runInfo(opts *infoOptions) error {
 // showContent outputs the merged configuration (replaces `show` command)
 func showContent(opts *infoOptions) error {
 	paths := config.NewPaths()
+	projectRoot := findProjectRoot()
 
 	// Load config
 	cfg, err := config.Load()
@@ -85,21 +86,35 @@ func showContent(opts *infoOptions) error {
 	// Collect layers
 	var layers []merge.Layer
 
-	// Team layer (from cache)
+	// Team layer (from source repo or cache)
 	if layer == "all" || layer == "team" {
-		c := cache.New(paths)
-		teamContent, _, err := c.Read(owner, repo)
-		if err != nil {
-			if layer == "team" {
-				return err
+		if config.IsSourceRepo(projectRoot) {
+			// Read from local source repo
+			sourcePaths := config.NewSourceRepoPaths(projectRoot)
+			if content, err := os.ReadFile(sourcePaths.ClaudeMD); err == nil {
+				layers = append(layers, merge.Layer{
+					Content: string(content),
+					Source:  "team",
+				})
+			} else if layer == "team" {
+				return fmt.Errorf("team CLAUDE.md not found: %w", err)
 			}
-			// For "all", continue without team layer
-			printWarning("Team config not cached, run `staghorn sync` to fetch")
 		} else {
-			layers = append(layers, merge.Layer{
-				Content: teamContent,
-				Source:  "team",
-			})
+			// Read from cache
+			c := cache.New(paths)
+			teamContent, _, err := c.Read(owner, repo)
+			if err != nil {
+				if layer == "team" {
+					return err
+				}
+				// For "all", continue without team layer
+				printWarning("Team config not cached, run `staghorn sync` to fetch")
+			} else {
+				layers = append(layers, merge.Layer{
+					Content: teamContent,
+					Source:  "team",
+				})
+			}
 		}
 	}
 
@@ -139,8 +154,6 @@ func showContent(opts *infoOptions) error {
 	var languageFiles map[string][]*language.LanguageFile
 
 	if opts.languages != "none" {
-		projectRoot := findProjectRoot()
-
 		// Build language config from options
 		langCfg := language.LanguageConfig{
 			AutoDetect: cfg.Languages.AutoDetect,
