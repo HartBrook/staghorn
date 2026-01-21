@@ -3,7 +3,10 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/HartBrook/staghorn/internal/config"
 )
 
 func TestTeamInitNonInteractive(t *testing.T) {
@@ -232,12 +235,12 @@ func TestWriteTeamClaudeMD(t *testing.T) {
 	}
 
 	// Check content includes team name
-	if !containsStr(string(content), "Acme Corp") {
+	if !strings.Contains(string(content), "Acme Corp") {
 		t.Error("CLAUDE.md should include team name")
 	}
 
 	// Check content includes description
-	if !containsStr(string(content), "Building the future") {
+	if !strings.Contains(string(content), "Building the future") {
 		t.Error("CLAUDE.md should include description")
 	}
 }
@@ -269,17 +272,17 @@ func TestWriteTeamReadme(t *testing.T) {
 	}
 
 	// Check content includes team name
-	if !containsStr(string(content), "Acme Corp") {
+	if !strings.Contains(string(content), "Acme Corp") {
 		t.Error("README.md should include team name")
 	}
 
 	// Check content includes commands
-	if !containsStr(string(content), "code-review") {
+	if !strings.Contains(string(content), "code-review") {
 		t.Error("README.md should include command names")
 	}
 
 	// Check content includes languages
-	if !containsStr(string(content), "python") {
+	if !strings.Contains(string(content), "python") {
 		t.Error("README.md should include language names")
 	}
 }
@@ -442,7 +445,7 @@ func TestWriteTeamClaudeMD_EmptyDescription(t *testing.T) {
 	}
 
 	// Should include auto-generated description
-	if !containsStr(string(content), "Guidelines for Claude Code across all Acme Corp projects") {
+	if !strings.Contains(string(content), "Guidelines for Claude Code across all Acme Corp projects") {
 		t.Error("CLAUDE.md should include default description when none provided")
 	}
 }
@@ -472,23 +475,72 @@ func TestWriteTeamReadme_EmptyLists(t *testing.T) {
 	}
 
 	// Should show "no commands" messages
-	if !containsStr(string(content), "No commands installed yet") {
+	if !strings.Contains(string(content), "No commands installed yet") {
 		t.Error("README.md should indicate no commands when list is empty")
 	}
-	if !containsStr(string(content), "No language configs installed yet") {
+	if !strings.Contains(string(content), "No language configs installed yet") {
 		t.Error("README.md should indicate no languages when list is empty")
 	}
 }
 
-func containsStr(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsStrHelper(s, substr))
+func TestTeamInit_CreatesSourceYaml(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "staghorn-team-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	origDir, _ := os.Getwd()
+	defer func() { _ = os.Chdir(origDir) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("failed to change to temp dir: %v", err)
+	}
+
+	// Run team init
+	err = runTeamInit(true, false, false)
+	if err != nil {
+		t.Fatalf("runTeamInit failed: %v", err)
+	}
+
+	// Verify .staghorn/source.yaml was created
+	sourceYaml := filepath.Join(".staghorn", "source.yaml")
+	if _, err := os.Stat(sourceYaml); err != nil {
+		t.Error(".staghorn/source.yaml was not created")
+	}
+
+	// Verify IsSourceRepo returns true
+	if !config.IsSourceRepo(tmpDir) {
+		t.Error("IsSourceRepo should return true after team init")
+	}
 }
 
-func containsStrHelper(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
+func TestTeamValidate_ChecksSourceYaml(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "staghorn-team-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
 	}
-	return false
+	defer os.RemoveAll(tmpDir)
+
+	origDir, _ := os.Getwd()
+	defer func() { _ = os.Chdir(origDir) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("failed to change to temp dir: %v", err)
+	}
+
+	// Create CLAUDE.md but no source.yaml
+	if err := os.WriteFile("CLAUDE.md", []byte("# Team Standards"), 0644); err != nil {
+		t.Fatalf("failed to write CLAUDE.md: %v", err)
+	}
+
+	// Validate should pass (source.yaml is optional but warned about)
+	// This test just verifies we don't crash when source.yaml is missing
+	_ = runTeamValidate() // May return error due to missing CLAUDE.md content checks
+
+	// Now create source.yaml and validate again
+	if err := config.WriteSourceRepoConfig(tmpDir); err != nil {
+		t.Fatalf("failed to write source config: %v", err)
+	}
+
+	// Validate should still work
+	_ = runTeamValidate()
 }

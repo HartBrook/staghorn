@@ -10,6 +10,7 @@ import (
 type Section struct {
 	Header  string // The H2 header text (without ##)
 	Content string // Everything until the next H2
+	Source  string // Source layer ("team", "personal", "project")
 }
 
 // Document represents a parsed markdown document.

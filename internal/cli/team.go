@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/HartBrook/staghorn/internal/commands"
+	"github.com/HartBrook/staghorn/internal/config"
 	"github.com/HartBrook/staghorn/internal/eval"
 	"github.com/HartBrook/staghorn/internal/starter"
 	"github.com/spf13/cobra"
@@ -231,6 +232,16 @@ func runTeamInit(nonInteractive, noTemplates, noReadme bool) error {
 		}
 	}
 
+	// Source repo config (.staghorn/source.yaml)
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get working directory: %w", err)
+	}
+	if err := config.WriteSourceRepoConfig(cwd); err != nil {
+		return fmt.Errorf("failed to write source config: %w", err)
+	}
+	printSuccess("Created .staghorn/source.yaml")
+
 	// Summary
 	fmt.Println()
 	fmt.Println("Created Files")
@@ -239,6 +250,7 @@ func runTeamInit(nonInteractive, noTemplates, noReadme bool) error {
 	if readmeCreated {
 		printFileStatus("README.md", "Explains repo structure")
 	}
+	printFileStatus(".staghorn/source.yaml", "Marks this as a source repo")
 	printDirStatus("commands/", len(selectedCommands), "starter commands")
 	printDirStatus("languages/", len(selectedLanguages), "language configs")
 	if templatesInstalled > 0 {
@@ -265,6 +277,18 @@ func runTeamValidate() error {
 
 	errors := 0
 	warnings := 0
+
+	// Check .staghorn/source.yaml
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get working directory: %w", err)
+	}
+	if config.IsSourceRepo(cwd) {
+		printSuccess(".staghorn/source.yaml - source repo marker present")
+	} else {
+		fmt.Printf("%s .staghorn/source.yaml - not found (run 'staghorn team init' to create)\n", warningIcon)
+		warnings++
+	}
 
 	// Check CLAUDE.md
 	if info, err := os.Stat("CLAUDE.md"); err != nil {

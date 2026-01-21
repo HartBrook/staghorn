@@ -510,10 +510,17 @@ func loadEvals() ([]*eval.Eval, error) {
 // generateClaudeConfig generates the merged CLAUDE.md content for a given layer.
 func generateClaudeConfig(layer string) (string, error) {
 	paths := config.NewPaths()
+	projectRoot := findProjectRoot()
 
-	// Load team config
+	// Load team config (from source repo or cache)
 	var teamContent string
-	if config.Exists() {
+	if config.IsSourceRepo(projectRoot) {
+		// Read from local source repo
+		sourcePaths := config.NewSourceRepoPaths(projectRoot)
+		if data, err := os.ReadFile(sourcePaths.ClaudeMD); err == nil {
+			teamContent = string(data)
+		}
+	} else if config.Exists() {
 		cfg, err := config.Load()
 		if err == nil {
 			owner, repo, err := cfg.DefaultOwnerRepo()
@@ -534,7 +541,7 @@ func generateClaudeConfig(layer string) (string, error) {
 
 	// Load project config
 	var projectContent string
-	if projectRoot := findProjectRoot(); projectRoot != "" {
+	if projectRoot != "" {
 		projectPaths := config.NewProjectPaths(projectRoot)
 		if data, err := os.ReadFile(projectPaths.SourceMD); err == nil {
 			projectContent = string(data)

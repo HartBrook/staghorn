@@ -83,9 +83,9 @@ func ExtractAnchors(content string) []string {
 
 // ValidationResult contains the results of anchor validation.
 type ValidationResult struct {
-	Preserved      []string // Anchors that were preserved
-	MissingStrict  []string // Strict anchors that are missing (should fail)
-	MissingSoft    []string // Soft anchors that are missing (warnings only)
+	Preserved     []string // Anchors that were preserved
+	MissingStrict []string // Strict anchors that are missing (should fail)
+	MissingSoft   []string // Soft anchors that are missing (warnings only)
 }
 
 // HasStrictFailures returns true if any strict anchors are missing.

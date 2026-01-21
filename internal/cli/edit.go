@@ -63,9 +63,14 @@ func runEdit(layer string, noApply bool) error {
 	case "project":
 		return editProject(noApply)
 	case "team":
+		// Check if we're in a source repo - if so, allow editing
+		projectRoot := findProjectRoot()
+		if config.IsSourceRepo(projectRoot) {
+			return editTeam(projectRoot, noApply)
+		}
 		return fmt.Errorf("team config is read-only\nUse 'staghorn info --layer team' to view it")
 	default:
-		return fmt.Errorf("unknown layer '%s'\nValid layers: personal, project", layer)
+		return fmt.Errorf("unknown layer '%s'\nValid layers: personal, project, team (in source repo)", layer)
 	}
 }
 
@@ -232,6 +237,31 @@ func editProject(noApply bool) error {
 	}
 
 	printSuccess("Applied to %s", relativePath(projectPaths.OutputMD))
+
+	return nil
+}
+
+func editTeam(projectRoot string, noApply bool) error {
+	sourcePaths := config.NewSourceRepoPaths(projectRoot)
+
+	// Check if CLAUDE.md exists
+	if _, err := os.Stat(sourcePaths.ClaudeMD); os.IsNotExist(err) {
+		return fmt.Errorf("CLAUDE.md not found\nRun 'staghorn team init' first")
+	}
+
+	// Open editor
+	if err := openEditor(sourcePaths.ClaudeMD); err != nil {
+		return err
+	}
+
+	fmt.Println()
+	printSuccess("Team config saved")
+
+	// For team layer in source repo, there's no "apply" step needed
+	// The file is edited directly
+	if !noApply {
+		fmt.Printf("  %s Changes are saved directly to %s\n", dim("Note:"), relativePath(sourcePaths.ClaudeMD))
+	}
 
 	return nil
 }
