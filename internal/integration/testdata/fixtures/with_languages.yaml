@@ -1,0 +1,56 @@
+name: "with_languages"
+description: "Team and personal language configs merged correctly"
+
+setup:
+  team:
+    source: "acme/standards"
+    claude_md: |
+      ## Code Style
+
+      Team rules.
+    languages:
+      python: |
+        ## Python Guidelines
+
+        Use type hints for all functions.
+        Use ruff for linting.
+      go: |
+        ## Go Guidelines
+
+        Use gofmt.
+        Handle errors explicitly.
+
+  personal:
+    languages:
+      python: |
+        ## My Python Preferences
+
+        Prefer dataclasses over dicts.
+
+  config:
+    version: 1
+    source: "acme/standards"
+
+assertions:
+  output_exists: true
+  header:
+    managed_by: true
+  provenance:
+    has_team: true
+  contains:
+    - "Team rules"
+    - "Use type hints"
+    - "Use gofmt"
+    - "Prefer dataclasses"
+  languages:
+    - name: "python"
+      has_team_content: true
+      has_personal_content: true
+      contains:
+        - "Use type hints"
+        - "Prefer dataclasses"
+    - name: "go"
+      has_team_content: true
+      has_personal_content: false
+      contains:
+        - "Use gofmt"

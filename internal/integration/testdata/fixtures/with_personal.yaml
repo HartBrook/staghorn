@@ -1,0 +1,50 @@
+name: "with_personal"
+description: "Team config with personal additions merged"
+
+setup:
+  team:
+    source: "acme/standards"
+    claude_md: |
+      ## Code Style
+
+      Follow team standards.
+
+      ## Testing
+
+      Write tests for everything.
+
+  personal:
+    personal_md: |
+      ## Code Style
+
+      My personal preferences for code style.
+
+      ## My Preferences
+
+      Custom personal section.
+
+  config:
+    version: 1
+    source: "acme/standards"
+
+assertions:
+  output_exists: true
+  header:
+    managed_by: true
+    source_repo: "acme/standards"
+  provenance:
+    has_team: true
+    has_personal: true
+    order:
+      - "team"
+      - "personal"
+  contains:
+    - "Follow team standards"
+    - "My personal preferences"
+    - "Custom personal section"
+    - "<!-- staghorn:source:team -->"
+    - "<!-- staghorn:source:personal -->"
+  sections:
+    - "## Code Style"
+    - "## Testing"
+    - "## My Preferences"

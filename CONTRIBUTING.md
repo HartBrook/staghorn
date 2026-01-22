@@ -49,6 +49,8 @@ staghorn/
 │   ├── config/                  # Config file parsing
 │   ├── errors/                  # Typed error handling
 │   ├── github/                  # GitHub API client
+│   ├── integration/             # Integration tests
+│   │   └── testdata/fixtures/   # YAML test fixtures
 │   ├── merge/                   # Markdown merge logic
 │   └── starter/                 # Embedded starter content
 │       ├── commands/            # Starter command templates
@@ -71,6 +73,7 @@ staghorn/
 | `internal/config` | Parses `config.yaml` and manages paths |
 | `internal/errors` | Typed errors with hints |
 | `internal/github` | GitHub API client with auth handling |
+| `internal/integration` | Integration tests with YAML fixtures |
 | `internal/merge` | Section-based markdown merging |
 | `internal/starter` | Embedded starter commands, languages, and templates |
 
@@ -166,6 +169,80 @@ func TestMergeLayers(t *testing.T) {
     }
 }
 ```
+
+### Integration Tests
+
+Integration tests verify the full sync workflow produces correct merged output. They use filesystem isolation (`t.TempDir()`) and don't touch real config directories.
+
+**Run integration tests:**
+
+```bash
+# All integration tests (mocked, no network)
+go test ./internal/integration/...
+
+# With verbose output
+go test -v ./internal/integration/...
+
+# Run specific test
+go test -v ./internal/integration/... -run TestIntegration_Fixtures/basic_sync
+
+# Live tests against real GitHub (requires gh auth)
+go test -tags=live ./internal/integration/...
+```
+
+**Adding a new integration test:**
+
+Create a YAML fixture in `internal/integration/testdata/fixtures/`:
+
+```yaml
+name: "my_scenario"
+description: "What this test verifies"
+
+setup:
+  team:
+    source: "owner/repo"
+    claude_md: |
+      ## Code Style
+
+      Team content.
+    languages:
+      python: |
+        Use type hints.
+
+  personal:
+    personal_md: |
+      ## My Preferences
+
+      Personal content.
+
+  config:
+    version: 1
+    source: "owner/repo"
+
+assertions:
+  output_exists: true
+  header:
+    managed_by: true
+    source_repo: "owner/repo"
+  provenance:
+    has_team: true
+    has_personal: true
+    order: ["team", "personal"]
+  contains:
+    - "Team content"
+    - "Personal content"
+  not_contains:
+    - "should not appear"
+  sections:
+    - "## Code Style"
+  languages:
+    - name: "python"
+      has_team_content: true
+      contains:
+        - "Use type hints"
+```
+
+The test runner automatically discovers and runs new fixtures.
 
 ## Adding a New Command
 
