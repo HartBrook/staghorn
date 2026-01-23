@@ -1,0 +1,49 @@
+name: "provenance_order"
+description: "Team content appears before personal in same section"
+
+setup:
+  team:
+    source: "testorg/testrepo"
+    claude_md: |
+      ## Section A
+
+      Team content for section A.
+
+      ## Section B
+
+      Team content for section B.
+
+  personal:
+    personal_md: |
+      ## Section A
+
+      Personal additions to section A.
+
+      ## Section C
+
+      Personal-only section C.
+
+  config:
+    version: 1
+    source: "testorg/testrepo"
+
+assertions:
+  output_exists: true
+  header:
+    managed_by: true
+    source_repo: "testorg/testrepo"
+  provenance:
+    has_team: true
+    has_personal: true
+    order:
+      - "team"
+      - "personal"
+  contains:
+    - "Team content for section A"
+    - "Personal additions to section A"
+    - "Team content for section B"
+    - "Personal-only section C"
+  sections:
+    - "## Section A"
+    - "## Section B"
+    - "## Section C"

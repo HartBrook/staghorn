@@ -1,0 +1,34 @@
+name: "basic_sync"
+description: "Basic team config sync with provenance markers"
+
+setup:
+  team:
+    source: "acme/standards"
+    claude_md: |
+      ## Code Style
+
+      Follow team standards.
+
+      ## Testing
+
+      Write tests for everything.
+
+  config:
+    version: 1
+    source: "acme/standards"
+
+assertions:
+  output_exists: true
+  header:
+    managed_by: true
+    source_repo: "acme/standards"
+  provenance:
+    has_team: true
+    has_personal: false
+  contains:
+    - "Follow team standards"
+    - "Write tests for everything"
+    - "<!-- staghorn:source:team -->"
+  sections:
+    - "## Code Style"
+    - "## Testing"

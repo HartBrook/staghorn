@@ -1,4 +1,4 @@
-.PHONY: build install install-alias clean test test-verbose test-cover test-race lint fmt vet check ci run help
+.PHONY: build install install-alias clean test test-verbose test-cover test-race test-integration test-live lint fmt vet check ci run help
 
 # Build variables
 BINARY_NAME := staghorn
@@ -54,6 +54,14 @@ test-cover-html:
 test-race:
 	go test -race -coverprofile=coverage.out ./...
 
+# Run integration tests
+test-integration:
+	go test -v ./internal/integration/...
+
+# Run live integration tests (requires gh auth)
+test-live:
+	go test -tags=live -v ./internal/integration/...
+
 # Run linter (installs golangci-lint if missing)
 lint:
 	@which golangci-lint > /dev/null || (echo "Installing golangci-lint..." && go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest)
@@ -99,6 +107,8 @@ help:
 	@echo "  test-cover     Run tests with coverage"
 	@echo "  test-cover-html Generate HTML coverage report"
 	@echo "  test-race      Run tests with race detection (same as CI)"
+	@echo "  test-integration Run integration tests"
+	@echo "  test-live      Run live integration tests (requires gh auth)"
 	@echo "  lint           Run golangci-lint"
 	@echo "  fmt            Format code"
 	@echo "  vet            Run go vet"
