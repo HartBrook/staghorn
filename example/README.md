@@ -20,6 +20,13 @@ team-repo/
 │   ├── refactor.md        # Suggest refactoring improvements
 │   ├── security-audit.md  # Security vulnerability scan
 │   └── test-gen.md        # Generate unit tests
+├── rules/                 # Path-scoped rules
+│   ├── security.md        # Security guidelines (all files)
+│   ├── testing.md         # Testing standards (all files)
+│   ├── api/
+│   │   └── rest.md        # REST API standards (api paths)
+│   └── frontend/
+│       └── react.md       # React guidelines (component paths)
 ├── evals/                 # Behavioral tests
 │   ├── team-security.yaml # Security guidelines tests
 │   ├── team-quality.yaml  # Code quality tests
@@ -47,6 +54,7 @@ To use this as your team's standards repo:
 ## Customization
 
 - **CLAUDE.md**: Add your team's general coding standards
+- **rules/**: Add path-scoped rules for specific file types or directories
 - **evals/**: Write tests to verify Claude follows your guidelines
 - **languages/**: Add configs for languages your team uses
 - **commands/**: Create prompts for common workflows
@@ -57,4 +65,5 @@ To use this as your team's standards repo:
 - Keep guidelines concise and actionable
 - Update regularly based on team feedback
 - Use commands for repetitive tasks
+- Use rules with path patterns for file-specific guidelines
 - Language configs should complement, not repeat, the main CLAUDE.md

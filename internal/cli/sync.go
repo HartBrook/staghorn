@@ -16,6 +16,7 @@ import (
 	"github.com/HartBrook/staghorn/internal/language"
 	"github.com/HartBrook/staghorn/internal/merge"
 	"github.com/HartBrook/staghorn/internal/optimize"
+	"github.com/HartBrook/staghorn/internal/rules"
 	"github.com/spf13/cobra"
 )
 
@@ -25,6 +26,7 @@ type syncOptions struct {
 	configOnly    bool
 	commandsOnly  bool
 	languagesOnly bool
+	rulesOnly     bool
 	fetchOnly     bool
 	applyOnly     bool
 	claudeOnly    bool
@@ -54,10 +56,11 @@ This is the main command for keeping your Claude Code config up to date.`,
 	cmd.Flags().BoolVar(&opts.offline, "offline", false, "Use cached version only, skip fetch")
 	cmd.Flags().BoolVar(&opts.fetchOnly, "fetch-only", false, "Only fetch, don't apply to ~/.claude/CLAUDE.md")
 	cmd.Flags().BoolVar(&opts.applyOnly, "apply-only", false, "Only apply cached config, skip fetch")
-	cmd.Flags().BoolVar(&opts.configOnly, "config-only", false, "Only sync config, skip commands and languages")
-	cmd.Flags().BoolVar(&opts.commandsOnly, "commands-only", false, "Only sync commands, skip config and languages")
-	cmd.Flags().BoolVar(&opts.languagesOnly, "languages-only", false, "Only sync languages, skip config and commands")
-	cmd.Flags().BoolVar(&opts.claudeOnly, "claude-only", false, "Only sync commands to ~/.claude/commands/, skip config apply")
+	cmd.Flags().BoolVar(&opts.configOnly, "config-only", false, "Only sync config, skip commands, languages, and rules")
+	cmd.Flags().BoolVar(&opts.commandsOnly, "commands-only", false, "Only sync commands, skip config, languages, and rules")
+	cmd.Flags().BoolVar(&opts.languagesOnly, "languages-only", false, "Only sync languages, skip config, commands, and rules")
+	cmd.Flags().BoolVar(&opts.rulesOnly, "rules-only", false, "Only sync rules, skip config, commands, and languages")
+	cmd.Flags().BoolVar(&opts.claudeOnly, "claude-only", false, "Only sync commands and rules to ~/.claude/, skip config apply")
 
 	return cmd
 }
@@ -132,8 +135,8 @@ func runSync(ctx context.Context, opts *syncOptions) error {
 
 	fmt.Printf("Fetching %s/%s...\n", owner, repo)
 
-	// Sync config unless --commands-only, --languages-only, or --claude-only was specified
-	if !opts.commandsOnly && !opts.languagesOnly && !opts.claudeOnly {
+	// Sync config unless --commands-only, --languages-only, --rules-only, or --claude-only was specified
+	if !opts.commandsOnly && !opts.languagesOnly && !opts.rulesOnly && !opts.claudeOnly {
 		result, err := client.FetchFile(ctx, owner, repo, config.DefaultPath, branch)
 		if err != nil {
 			return errors.GitHubFetchFailed(owner+"/"+repo, err)
@@ -156,8 +159,8 @@ func runSync(ctx context.Context, opts *syncOptions) error {
 		printInfo("SHA", result.SHA[:8])
 	}
 
-	// Sync commands unless --config-only, --languages-only, or --claude-only was specified
-	if !opts.configOnly && !opts.languagesOnly && !opts.claudeOnly {
+	// Sync commands unless --config-only, --languages-only, --rules-only, or --claude-only was specified
+	if !opts.configOnly && !opts.languagesOnly && !opts.rulesOnly && !opts.claudeOnly {
 		commandCount, err := syncCommands(ctx, client, owner, repo, branch, paths)
 		if err != nil {
 			printWarning("Failed to sync commands: %v", err)
@@ -176,8 +179,8 @@ func runSync(ctx context.Context, opts *syncOptions) error {
 		}
 	}
 
-	// Sync languages unless --config-only, --commands-only, or --claude-only was specified
-	if !opts.configOnly && !opts.commandsOnly && !opts.claudeOnly {
+	// Sync languages unless --config-only, --commands-only, --rules-only, or --claude-only was specified
+	if !opts.configOnly && !opts.commandsOnly && !opts.rulesOnly && !opts.claudeOnly {
 		languageCount, err := syncLanguages(ctx, client, owner, repo, branch, paths)
 		if err != nil {
 			printWarning("Failed to sync languages: %v", err)
@@ -188,8 +191,8 @@ func runSync(ctx context.Context, opts *syncOptions) error {
 		}
 	}
 
-	// Sync evals unless --config-only, --commands-only, --languages-only, or --claude-only was specified
-	if !opts.configOnly && !opts.commandsOnly && !opts.languagesOnly && !opts.claudeOnly {
+	// Sync evals unless --config-only, --commands-only, --languages-only, --rules-only, or --claude-only was specified
+	if !opts.configOnly && !opts.commandsOnly && !opts.languagesOnly && !opts.rulesOnly && !opts.claudeOnly {
 		evalCount, err := syncEvals(ctx, client, owner, repo, branch, paths)
 		if err != nil {
 			printWarning("Failed to sync evals: %v", err)
@@ -198,22 +201,44 @@ func runSync(ctx context.Context, opts *syncOptions) error {
 		}
 	}
 
-	// Apply to ~/.claude/CLAUDE.md unless --fetch-only was specified
-	if !opts.fetchOnly && !opts.claudeOnly {
+	// Sync rules unless --config-only, --commands-only, --languages-only, or --claude-only was specified
+	if !opts.configOnly && !opts.commandsOnly && !opts.languagesOnly && !opts.claudeOnly {
+		ruleCount, err := syncRules(ctx, client, owner, repo, branch, paths)
+		if err != nil {
+			printWarning("Failed to sync rules: %v", err)
+		} else if ruleCount > 0 {
+			printSuccess("Synced %d rules", ruleCount)
+		} else if opts.rulesOnly {
+			fmt.Println("No rules found in team repository")
+		}
+	}
+
+	// Apply to ~/.claude/CLAUDE.md unless --fetch-only, --rules-only, or --claude-only was specified
+	if !opts.fetchOnly && !opts.rulesOnly && !opts.claudeOnly {
 		fmt.Println()
 		if err := applyConfig(cfg, paths, owner, repo); err != nil {
 			return err
 		}
 	}
 
-	// Sync commands to Claude Code (always runs unless --fetch-only, --config-only, or --languages-only)
-	if !opts.configOnly && !opts.languagesOnly && !opts.fetchOnly {
+	// Sync commands to Claude Code (always runs unless --fetch-only, --config-only, --languages-only, or --rules-only)
+	if !opts.configOnly && !opts.languagesOnly && !opts.rulesOnly && !opts.fetchOnly {
 		claudeCount, err := syncClaudeCommands(paths, owner, repo)
 		if err != nil {
 			printWarning("Failed to sync Claude commands: %v", err)
 		} else if claudeCount > 0 {
 			printSuccess("Synced %d commands to Claude Code", claudeCount)
 			fmt.Printf("  %s Use /%s in Claude Code\n", dim("Tip:"), "code-review")
+		}
+	}
+
+	// Sync rules to Claude Code (always runs unless --fetch-only, --config-only, --languages-only, or --commands-only)
+	if !opts.configOnly && !opts.languagesOnly && !opts.commandsOnly && !opts.fetchOnly {
+		claudeRuleCount, err := syncClaudeRules(paths, owner, repo)
+		if err != nil {
+			printWarning("Failed to sync Claude rules: %v", err)
+		} else if claudeRuleCount > 0 {
+			printSuccess("Synced %d rules to Claude Code", claudeRuleCount)
 		}
 	}
 
@@ -398,6 +423,134 @@ func syncEvals(ctx context.Context, client *github.Client, owner, repo, branch s
 			continue
 		}
 
+		count++
+	}
+
+	return count, nil
+}
+
+// syncRules fetches rules from the team repo's rules/ directory (recursive).
+func syncRules(ctx context.Context, client *github.Client, owner, repo, branch string, paths *config.Paths) (int, error) {
+	rulesDir := paths.TeamRulesDir(owner, repo)
+
+	// Clear existing cache to handle deletions
+	if err := os.RemoveAll(rulesDir); err != nil {
+		return 0, fmt.Errorf("failed to clear rules cache: %w", err)
+	}
+
+	count, err := syncRulesRecursive(ctx, client, owner, repo, branch, "rules", rulesDir, "")
+	if err != nil {
+		return 0, err
+	}
+
+	return count, nil
+}
+
+// syncRulesRecursive handles recursive directory fetching for rules.
+func syncRulesRecursive(ctx context.Context, client *github.Client, owner, repo, branch, remotePath, localBase, relPath string) (int, error) {
+	entries, err := client.ListDirectory(ctx, owner, repo, remotePath, branch)
+	if err != nil {
+		return 0, err
+	}
+
+	if entries == nil {
+		return 0, nil
+	}
+
+	count := 0
+	for _, entry := range entries {
+		entryRelPath := entry.Name
+		if relPath != "" {
+			entryRelPath = filepath.Join(relPath, entry.Name)
+		}
+
+		if entry.Type == "dir" {
+			// Recurse into subdirectory
+			subCount, err := syncRulesRecursive(ctx, client, owner, repo, branch,
+				entry.Path, localBase, entryRelPath)
+			if err != nil {
+				printWarning("Failed to sync rules subdirectory %s: %v", entry.Name, err)
+				continue
+			}
+			count += subCount
+		} else if entry.Type == "file" && strings.HasSuffix(entry.Name, ".md") {
+			// Fetch and cache rule file
+			result, err := client.FetchFile(ctx, owner, repo, entry.Path, branch)
+			if err != nil {
+				printWarning("Failed to fetch rule %s: %v", entry.Name, err)
+				continue
+			}
+
+			localPath := filepath.Join(localBase, entryRelPath)
+			if err := os.MkdirAll(filepath.Dir(localPath), 0755); err != nil {
+				printWarning("Failed to create directory for rule %s: %v", entry.Name, err)
+				continue
+			}
+
+			if err := os.WriteFile(localPath, []byte(result.Content), 0644); err != nil {
+				printWarning("Failed to write rule %s: %v", entry.Name, err)
+				continue
+			}
+
+			count++
+		}
+	}
+
+	return count, nil
+}
+
+// syncClaudeRules syncs staghorn rules to Claude Code rules directory.
+func syncClaudeRules(paths *config.Paths, owner, repo string) (int, error) {
+	// Load rules from all sources using the registry
+	registry, err := rules.LoadRegistry(
+		paths.TeamRulesDir(owner, repo),
+		paths.PersonalRules,
+		"", // No project dir for global sync
+	)
+	if err != nil {
+		return 0, fmt.Errorf("failed to load rules: %w", err)
+	}
+
+	allRules := registry.All()
+	if len(allRules) == 0 {
+		return 0, nil
+	}
+
+	// Create Claude rules directory
+	claudeDir := paths.ClaudeRulesDir()
+	if err := os.MkdirAll(claudeDir, 0755); err != nil {
+		return 0, fmt.Errorf("failed to create Claude rules directory: %w", err)
+	}
+
+	// Write each rule
+	count := 0
+	for _, rule := range allRules {
+		outputPath := filepath.Join(claudeDir, rule.RelPath)
+
+		// Check for collision with non-staghorn file
+		if existingContent, err := os.ReadFile(outputPath); err == nil {
+			if !strings.Contains(string(existingContent), merge.HeaderManagedPrefix) {
+				// File exists and is not managed by staghorn - skip with warning
+				printWarning("Skipping rule %s: existing rule not managed by staghorn", rule.RelPath)
+				continue
+			}
+		}
+
+		// Ensure parent directory exists (for subdirectories)
+		if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
+			printWarning("Failed to create directory for rule %s: %v", rule.RelPath, err)
+			continue
+		}
+
+		content, err := rules.ConvertToClaude(rule)
+		if err != nil {
+			printWarning("Failed to convert rule %s: %v", rule.RelPath, err)
+			continue
+		}
+		if err := os.WriteFile(outputPath, []byte(content), 0644); err != nil {
+			printWarning("Failed to write Claude rule %s: %v", rule.RelPath, err)
+			continue
+		}
 		count++
 	}
 

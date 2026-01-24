@@ -9,6 +9,7 @@ import (
 	"github.com/HartBrook/staghorn/internal/config"
 	"github.com/HartBrook/staghorn/internal/language"
 	"github.com/HartBrook/staghorn/internal/merge"
+	"github.com/HartBrook/staghorn/internal/rules"
 	"gopkg.in/yaml.v3"
 )
 
@@ -107,6 +108,85 @@ func (e *TestEnv) ReadOutput() (string, error) {
 		return "", err
 	}
 	return string(content), nil
+}
+
+// SetupTeamRule writes a team rule to cache.
+func (e *TestEnv) SetupTeamRule(owner, repo, relPath, content string) error {
+	rulesDir := e.Paths.TeamRulesDir(owner, repo)
+	fullPath := filepath.Join(rulesDir, relPath)
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+		return err
+	}
+	return os.WriteFile(fullPath, []byte(content), 0644)
+}
+
+// SetupPersonalRule writes a personal rule.
+func (e *TestEnv) SetupPersonalRule(relPath, content string) error {
+	fullPath := filepath.Join(e.Paths.PersonalRules, relPath)
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+		return err
+	}
+	return os.WriteFile(fullPath, []byte(content), 0644)
+}
+
+// GetClaudeRulesDir returns the path to ~/.claude/rules.
+func (e *TestEnv) GetClaudeRulesDir() string {
+	return filepath.Join(e.ClaudeDir, "rules")
+}
+
+// ReadClaudeRule reads a rule from ~/.claude/rules.
+func (e *TestEnv) ReadClaudeRule(relPath string) (string, error) {
+	content, err := os.ReadFile(filepath.Join(e.GetClaudeRulesDir(), relPath))
+	if err != nil {
+		return "", err
+	}
+	return string(content), nil
+}
+
+// RunSyncRules syncs rules from team/personal sources to Claude rules directory.
+func (e *TestEnv) RunSyncRules(owner, repo string) (int, error) {
+	// Load rules from all sources using the registry
+	registry, err := rules.LoadRegistry(
+		e.Paths.TeamRulesDir(owner, repo),
+		e.Paths.PersonalRules,
+		"", // No project dir for global sync
+	)
+	if err != nil {
+		return 0, err
+	}
+
+	allRules := registry.All()
+	if len(allRules) == 0 {
+		return 0, nil
+	}
+
+	// Create Claude rules directory
+	claudeRulesDir := e.GetClaudeRulesDir()
+	if err := os.MkdirAll(claudeRulesDir, 0755); err != nil {
+		return 0, err
+	}
+
+	// Write each rule
+	count := 0
+	for _, rule := range allRules {
+		outputPath := filepath.Join(claudeRulesDir, rule.RelPath)
+
+		// Ensure parent directory exists (for subdirectories)
+		if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
+			return count, err
+		}
+
+		content, err := rules.ConvertToClaude(rule)
+		if err != nil {
+			return count, err
+		}
+		if err := os.WriteFile(outputPath, []byte(content), 0644); err != nil {
+			return count, err
+		}
+		count++
+	}
+
+	return count, nil
 }
 
 // RunSync executes the merge and write operation with the current test environment.
