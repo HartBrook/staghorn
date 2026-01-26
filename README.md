@@ -416,6 +416,12 @@ your-org/claude-standards/
 ├── languages/          # Language-specific configs (optional)
 │   ├── python.md
 │   └── go.md
+├── rules/              # Path-scoped rules (optional)
+│   ├── security.md
+│   ├── api/
+│   │   └── rest.md
+│   └── frontend/
+│       └── react.md
 ├── evals/              # Behavioral tests (optional)
 │   ├── security-secrets.yaml
 │   └── code-quality.yaml
@@ -491,17 +497,16 @@ Language configs are markdown files in `languages/` directories, layered just li
 2. **Personal** — `~/.config/staghorn/languages/`
 3. **Project** — `.staghorn/languages/`
 
-### Global vs Project
+### What Gets Included
 
-- **Global (`~/.claude/CLAUDE.md`)**: Includes all available language configs
-- **Project (`./CLAUDE.md`)**: Auto-detects languages from marker files (e.g., `go.mod`, `pyproject.toml`)
+By default, `stag sync` includes all language configs that exist in your team, personal, or project `languages/` directories. If your team provides `python.md` and `go.md`, both are included in the merged output.
 
-### Configuration Options
+Use `enabled` or `disabled` to control which languages are included:
 
 ```yaml
 # ~/.config/staghorn/config.yaml
 
-# Only include specific languages globally
+# Only include specific languages
 languages:
   enabled:
     - python
@@ -513,7 +518,9 @@ languages:
     - javascript
 ```
 
-### Supported Languages
+### Language Detection (Informational)
+
+The `stag languages` command detects languages in your project based on marker files. This is useful for seeing what languages are present, but doesn't affect which configs are synced.
 
 | Language   | Marker Files                                                |
 | ---------- | ----------------------------------------------------------- |
@@ -528,7 +535,111 @@ languages:
 | Swift      | `Package.swift`                                             |
 | Kotlin     | `build.gradle.kts`                                          |
 
-> When both TypeScript and JavaScript are detected, TypeScript takes precedence.
+> When both TypeScript and JavaScript are detected, TypeScript takes precedence in the display.
+
+## Path-Scoped Rules
+
+Rules are guidelines that Claude Code applies only when working with specific file types or directories. Unlike the main `CLAUDE.md` which applies globally, rules use path patterns to scope their applicability.
+
+### Rules vs Languages
+
+Both features provide scoped guidelines, but they solve different problems:
+
+| Feature | Scoping | Best For |
+|---------|---------|----------|
+| **Languages** | Included if config file exists (`languages/python.md`) | Language-specific conventions, tooling, idioms |
+| **Rules** | Path patterns in frontmatter (`src/api/**/*.ts`) | Architectural patterns, domain-specific guidelines |
+
+**Use Languages when** the guidance is tied to a programming language:
+- Python type hints and testing with pytest
+- Go error handling conventions
+- TypeScript strict mode settings
+
+**Use Rules when** the guidance is tied to a location or domain:
+- REST API standards for `src/api/**`
+- Database query patterns for `src/db/**`
+- React component guidelines for `src/components/**`
+
+They work together: a Python API project might use the `python` language config for Python conventions *and* the `api/rest.md` rule for REST patterns.
+
+### How Rules Work
+
+Rules are markdown files in `rules/` directories with optional YAML frontmatter specifying path patterns:
+
+```markdown
+---
+paths:
+  - "src/api/**/*.ts"
+  - "src/routes/**/*.ts"
+---
+# REST API Standards
+
+Use proper HTTP methods and status codes.
+```
+
+When you edit a file matching `src/api/**/*.ts`, Claude Code automatically includes these guidelines.
+
+### Rule Sources
+
+Rules layer just like other configs (higher precedence wins):
+
+| Source       | Location                     | Use case               |
+| ------------ | ---------------------------- | ---------------------- |
+| **Project**  | `.staghorn/rules/`           | Project-specific rules |
+| **Personal** | `~/.config/staghorn/rules/`  | Your custom rules      |
+| **Team**     | `rules/` in source repo      | Shared team rules      |
+| **Starter**  | Built-in                     | Common baseline rules  |
+
+Personal rules override team rules with the same relative path (e.g., `security.md`).
+
+### Starter Rules
+
+Staghorn includes starter rules you can use as a starting point:
+
+| Rule                  | Paths                          | Guidelines                    |
+| --------------------- | ------------------------------ | ----------------------------- |
+| `security.md`         | All files                      | Secrets, input validation     |
+| `testing.md`          | All files                      | Test coverage, quality        |
+| `api/rest.md`         | `src/api/**`, `src/routes/**`  | HTTP methods, status codes    |
+| `frontend/react.md`   | `src/components/**`, `app/**`  | Component design, performance |
+| `error-handling.md`   | All files                      | Error handling patterns       |
+
+### Creating Rules
+
+Create a rule file in `rules/` (team) or `~/.config/staghorn/rules/` (personal):
+
+```markdown
+---
+paths:
+  - "src/database/**/*.ts"
+  - "src/db/**/*.ts"
+---
+# Database Guidelines
+
+- Use parameterized queries to prevent SQL injection
+- Always handle connection errors gracefully
+- Use transactions for multi-step operations
+```
+
+Rules without `paths:` frontmatter apply to all files.
+
+### Subdirectory Organization
+
+Organize rules in subdirectories for clarity:
+
+```
+rules/
+├── security.md          # General security (all files)
+├── api/
+│   └── rest.md          # REST API guidelines
+├── frontend/
+│   ├── react.md         # React components
+│   └── accessibility.md # A11y guidelines
+└── database/
+    └── queries.md       # Database patterns
+```
+
+The subdirectory structure is preserved when syncing to `~/.claude/rules/`.
 
 ## Creating Commands
 
@@ -722,14 +833,17 @@ languages:
 | `~/.config/staghorn/personal.md` | Your personal additions               |
 | `~/.config/staghorn/commands/`   | Personal commands                     |
 | `~/.config/staghorn/languages/`  | Personal language configs             |
+| `~/.config/staghorn/rules/`      | Personal rules                        |
 | `~/.config/staghorn/evals/`      | Personal evals                        |
 | `~/.config/staghorn/optimized/`  | Cached optimization results           |
 | `~/.cache/staghorn/`             | Cached team/community configs         |
 | `~/.claude/CLAUDE.md`            | **Output** — merged global config     |
+| `~/.claude/rules/`               | **Output** — synced rules             |
 | `.staghorn/project.md`           | Project config source (you edit this) |
 | `.staghorn/source.yaml`          | Source repo marker (team repos only)  |
 | `.staghorn/commands/`            | Project-specific commands             |
 | `.staghorn/languages/`           | Project-specific language configs     |
+| `.staghorn/rules/`               | Project-specific rules                |
 | `.staghorn/evals/`               | Project-specific evals                |
 | `./CLAUDE.md`                    | **Output** — merged project config    |
 
@@ -784,9 +898,10 @@ stag sync --fetch-only     # Fetch without applying
 stag sync --apply-only     # Apply cached config without fetching
 stag sync --force          # Re-fetch even if cache is fresh
 stag sync --offline        # Use cached config only (no network)
-stag sync --config-only    # Sync config only, skip commands/languages
+stag sync --config-only    # Sync config only, skip commands/languages/rules
 stag sync --commands-only  # Sync commands only
 stag sync --languages-only # Sync language configs only
+stag sync --rules-only     # Sync rules only
 
 # Search options
 stag search --lang go      # Filter by language
