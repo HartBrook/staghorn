@@ -48,8 +48,10 @@ func runFixture(t *testing.T, fixture *Fixture) {
 	t.Helper()
 
 	// Validate fixture has required fields
-	require.NotNil(t, fixture.Setup.Team, "fixture must have team setup")
 	require.NotNil(t, fixture.Setup.Config, "fixture must have config setup")
+	// Either Team or MultiSource must be present
+	require.True(t, fixture.Setup.Team != nil || len(fixture.Setup.MultiSource) > 0,
+		"fixture must have team or multi_source setup")
 
 	// Create isolated environment
 	env := NewTestEnv(t)
@@ -59,14 +61,18 @@ func runFixture(t *testing.T, fixture *Fixture) {
 	err := ApplySetup(env, fixture.Setup)
 	require.NoError(t, err, "failed to apply setup")
 
-	// Get owner/repo from config
-	owner, repo := parseOwnerRepo(fixture.Setup.Team.Source)
-
 	// Get config
 	cfg := fixture.Setup.Config.ToConfig()
 
-	// Run sync
-	err = env.RunSync(owner, repo, cfg)
+	// Run sync - use multi-source sync if configured
+	if cfg.Source.IsMultiSource() {
+		err = env.RunMultiSourceSync(cfg)
+	} else {
+		// Get owner/repo from team source
+		require.NotNil(t, fixture.Setup.Team, "single-source fixture must have team setup")
+		owner, repo := parseOwnerRepo(fixture.Setup.Team.Source)
+		err = env.RunSync(owner, repo, cfg)
+	}
 	require.NoError(t, err, "RunSync failed")
 
 	// Check output exists
@@ -463,4 +469,195 @@ Personal-only section.`
 	personalContentIdx := strings.Index(output, "Personal additions for A")
 
 	assert.Greater(t, personalContentIdx, teamContentIdx, "team content should appear before personal additions")
+}
+
+// TestIntegration_MultiSourceLanguages tests multi-source language configuration.
+func TestIntegration_MultiSourceLanguages(t *testing.T) {
+	env := NewTestEnv(t)
+	defer env.Cleanup()
+
+	// Setup: base config from acme/standards
+	baseContent := `## Core Principles
+
+Base principles from acme/standards.`
+	err := env.SetupTeamConfig("acme", "standards", baseContent)
+	require.NoError(t, err)
+
+	// Setup: python language from community/python-standards
+	pythonContent := `## Python Guidelines
+
+Use type hints from community repo.`
+	err = env.SetupTeamLanguage("community", "python-standards", "python", pythonContent)
+	require.NoError(t, err)
+
+	// Setup: go language from default (acme/standards)
+	goContent := `## Go Guidelines
+
+Use gofmt from default repo.`
+	err = env.SetupTeamLanguage("acme", "standards", "go", goContent)
+	require.NoError(t, err)
+
+	// Create multi-source config
+	cfg := &config.Config{
+		Version: 1,
+		Source: config.Source{
+			Multi: &config.SourceConfig{
+				Default: "acme/standards",
+				Languages: map[string]string{
+					"python": "community/python-standards",
+				},
+			},
+		},
+		Languages: config.LanguageConfig{
+			Enabled: []string{"python", "go"},
+		},
+	}
+	err = env.SetupConfig(cfg)
+	require.NoError(t, err)
+
+	// Run multi-source sync
+	err = env.RunMultiSourceSync(cfg)
+	require.NoError(t, err)
+
+	output, err := env.ReadOutput()
+	require.NoError(t, err)
+
+	asserter := NewAsserter(t, output)
+
+	// Verify base content is present
+	assert.True(t, asserter.ContainsText("Base principles from acme/standards"),
+		"should contain base config content")
+
+	// Verify python content from community repo
+	assert.True(t, asserter.ContainsText("Use type hints from community repo"),
+		"should contain python content from community repo")
+
+	// Verify go content from default repo
+	assert.True(t, asserter.ContainsText("Use gofmt from default repo"),
+		"should contain go content from default repo")
+
+	// Verify header
+	assert.True(t, asserter.HasManagedHeader(), "should have managed header")
+}
+
+// TestIntegration_MultiSourceWithBaseOverride tests base config from different repo.
+func TestIntegration_MultiSourceWithBaseOverride(t *testing.T) {
+	env := NewTestEnv(t)
+	defer env.Cleanup()
+
+	// Setup: base config from acme/base-config (NOT the default)
+	baseContent := `## Base Config
+
+Content from separate base repo.`
+	err := env.SetupTeamConfig("acme", "base-config", baseContent)
+	require.NoError(t, err)
+
+	// Setup: language from default repo (acme/standards)
+	pythonContent := `## Python
+
+Python from default repo.`
+	err = env.SetupTeamLanguage("acme", "standards", "python", pythonContent)
+	require.NoError(t, err)
+
+	// Create multi-source config with base override
+	cfg := &config.Config{
+		Version: 1,
+		Source: config.Source{
+			Multi: &config.SourceConfig{
+				Default: "acme/standards",
+				Base:    "acme/base-config",
+			},
+		},
+		Languages: config.LanguageConfig{
+			Enabled: []string{"python"},
+		},
+	}
+	err = env.SetupConfig(cfg)
+	require.NoError(t, err)
+
+	err = env.RunMultiSourceSync(cfg)
+	require.NoError(t, err)
+
+	output, err := env.ReadOutput()
+	require.NoError(t, err)
+
+	asserter := NewAsserter(t, output)
+
+	// Verify base content is from override repo
+	assert.True(t, asserter.ContainsText("Content from separate base repo"),
+		"should contain base config from override repo")
+
+	// Verify python content is from default repo
+	assert.True(t, asserter.ContainsText("Python from default repo"),
+		"should contain python from default repo")
+}
+
+// TestIntegration_MultiSourceFallback tests that unconfigured languages use default.
+func TestIntegration_MultiSourceFallback(t *testing.T) {
+	env := NewTestEnv(t)
+	defer env.Cleanup()
+
+	// Setup: base config
+	baseContent := `## Standards
+
+Team standards.`
+	err := env.SetupTeamConfig("acme", "standards", baseContent)
+	require.NoError(t, err)
+
+	// Setup: python explicitly configured to community repo
+	pythonContent := `## Python
+
+Community Python.`
+	err = env.SetupTeamLanguage("community", "python-standards", "python", pythonContent)
+	require.NoError(t, err)
+
+	// Setup: go NOT explicitly configured - should fallback to default
+	goContent := `## Go
+
+Default Go.`
+	err = env.SetupTeamLanguage("acme", "standards", "go", goContent)
+	require.NoError(t, err)
+
+	// Setup: rust NOT explicitly configured - should fallback to default
+	rustContent := `## Rust
+
+Default Rust.`
+	err = env.SetupTeamLanguage("acme", "standards", "rust", rustContent)
+	require.NoError(t, err)
+
+	cfg := &config.Config{
+		Version: 1,
+		Source: config.Source{
+			Multi: &config.SourceConfig{
+				Default: "acme/standards",
+				Languages: map[string]string{
+					"python": "community/python-standards",
+					// go and rust not specified - should use default
+				},
+			},
+		},
+		Languages: config.LanguageConfig{
+			Enabled: []string{"python", "go", "rust"},
+		},
+	}
+	err = env.SetupConfig(cfg)
+	require.NoError(t, err)
+
+	err = env.RunMultiSourceSync(cfg)
+	require.NoError(t, err)
+
+	output, err := env.ReadOutput()
+	require.NoError(t, err)
+
+	asserter := NewAsserter(t, output)
+
+	// Python from community repo
+	assert.True(t, asserter.ContainsText("Community Python"),
+		"python should come from community repo")
+
+	// Go and Rust from default repo
+	assert.True(t, asserter.ContainsText("Default Go"),
+		"go should fallback to default repo")
+	assert.True(t, asserter.ContainsText("Default Rust"),
+		"rust should fallback to default repo")
 }

@@ -20,9 +20,18 @@ type Fixture struct {
 
 // FixtureSetup defines the test environment setup.
 type FixtureSetup struct {
-	Team     *TeamSetup     `yaml:"team"`
-	Personal *PersonalSetup `yaml:"personal"`
-	Config   *ConfigSetup   `yaml:"config"`
+	Team        *TeamSetup        `yaml:"team"`
+	MultiSource []MultiSourceRepo `yaml:"multi_source,omitempty"`
+	Personal    *PersonalSetup    `yaml:"personal"`
+	Config      *ConfigSetup      `yaml:"config"`
+}
+
+// MultiSourceRepo defines content from a specific repository in multi-source setup.
+type MultiSourceRepo struct {
+	Source    string            `yaml:"source"`
+	ClaudeMD  string            `yaml:"claude_md,omitempty"`
+	Languages map[string]string `yaml:"languages,omitempty"`
+	Commands  map[string]string `yaml:"commands,omitempty"`
 }
 
 // TeamSetup simulates the team repo content.
@@ -41,8 +50,16 @@ type PersonalSetup struct {
 // ConfigSetup defines the staghorn config.yaml content.
 type ConfigSetup struct {
 	Version   int             `yaml:"version"`
-	Source    string          `yaml:"source"`
+	Source    interface{}     `yaml:"source"` // Can be string or SourceConfigSetup
 	Languages *LanguagesSetup `yaml:"languages"`
+}
+
+// SourceConfigSetup defines multi-source configuration in fixtures.
+type SourceConfigSetup struct {
+	Default   string            `yaml:"default"`
+	Base      string            `yaml:"base,omitempty"`
+	Languages map[string]string `yaml:"languages,omitempty"`
+	Commands  map[string]string `yaml:"commands,omitempty"`
 }
 
 // LanguagesSetup defines language configuration.
@@ -107,10 +124,11 @@ func (f *Fixture) Validate() error {
 	if f.Name == "" {
 		return fmt.Errorf("missing required field: name")
 	}
-	if f.Setup.Team == nil {
-		return fmt.Errorf("missing required field: setup.team")
+	// Either Team or MultiSource must be present
+	if f.Setup.Team == nil && len(f.Setup.MultiSource) == 0 {
+		return fmt.Errorf("missing required field: setup.team or setup.multi_source")
 	}
-	if f.Setup.Team.Source == "" {
+	if f.Setup.Team != nil && f.Setup.Team.Source == "" {
 		return fmt.Errorf("missing required field: setup.team.source")
 	}
 	if f.Setup.Config == nil {
@@ -147,10 +165,52 @@ func LoadAllFixtures(dir string) ([]*Fixture, error) {
 }
 
 // ToConfig converts fixture config setup to a config.Config.
+// It logs warnings for malformed or missing fields in the source configuration.
 func (c *ConfigSetup) ToConfig() *config.Config {
 	cfg := &config.Config{
 		Version: c.Version,
-		Source:  config.Source{Simple: c.Source},
+	}
+
+	// Handle source - can be string or SourceConfigSetup
+	switch src := c.Source.(type) {
+	case string:
+		cfg.Source = config.Source{Simple: src}
+	case map[string]interface{}:
+		// YAML unmarshals objects as map[string]interface{}
+		multi := &config.SourceConfig{}
+		if def, ok := src["default"].(string); ok {
+			multi.Default = def
+		}
+		if base, ok := src["base"].(string); ok {
+			multi.Base = base
+		}
+		if langs, ok := src["languages"].(map[string]interface{}); ok {
+			multi.Languages = make(map[string]string)
+			for k, v := range langs {
+				if vs, ok := v.(string); ok {
+					multi.Languages[k] = vs
+				}
+			}
+		}
+		if cmds, ok := src["commands"].(map[string]interface{}); ok {
+			multi.Commands = make(map[string]string)
+			for k, v := range cmds {
+				if vs, ok := v.(string); ok {
+					multi.Commands[k] = vs
+				}
+			}
+		}
+		// Validate that default is set for multi-source configs
+		if multi.Default == "" {
+			// Fall back to simple source if default is missing
+			cfg.Source = config.Source{}
+		} else {
+			cfg.Source = config.Source{Multi: multi}
+		}
+	case nil:
+		// Source is nil - this will be caught by validation
+	default:
+		// Unknown type - leave source empty
 	}
 
 	if c.Languages != nil {
@@ -163,24 +223,50 @@ func (c *ConfigSetup) ToConfig() *config.Config {
 
 // ApplySetup applies the fixture setup to a test environment.
 func ApplySetup(env *TestEnv, setup FixtureSetup) error {
-	if setup.Team == nil {
-		return nil
-	}
+	// Handle multi-source setup
+	if len(setup.MultiSource) > 0 {
+		for _, src := range setup.MultiSource {
+			owner, repo := parseOwnerRepo(src.Source)
 
-	// Parse owner/repo from source
-	owner, repo := parseOwnerRepo(setup.Team.Source)
+			// Setup base config for this source
+			if src.ClaudeMD != "" {
+				if err := env.SetupTeamConfig(owner, repo, src.ClaudeMD); err != nil {
+					return err
+				}
+			}
 
-	// Setup team config
-	if setup.Team.ClaudeMD != "" {
-		if err := env.SetupTeamConfig(owner, repo, setup.Team.ClaudeMD); err != nil {
-			return err
+			// Setup languages for this source
+			for lang, content := range src.Languages {
+				if err := env.SetupTeamLanguage(owner, repo, lang, content); err != nil {
+					return err
+				}
+			}
+
+			// Setup commands for this source
+			for cmd, content := range src.Commands {
+				if err := env.SetupTeamCommand(owner, repo, cmd, content); err != nil {
+					return err
+				}
+			}
 		}
 	}
 
-	// Setup team languages
-	for lang, content := range setup.Team.Languages {
-		if err := env.SetupTeamLanguage(owner, repo, lang, content); err != nil {
-			return err
+	// Handle single-source team setup (backwards compatible)
+	if setup.Team != nil {
+		owner, repo := parseOwnerRepo(setup.Team.Source)
+
+		// Setup team config
+		if setup.Team.ClaudeMD != "" {
+			if err := env.SetupTeamConfig(owner, repo, setup.Team.ClaudeMD); err != nil {
+				return err
+			}
+		}
+
+		// Setup team languages
+		for lang, content := range setup.Team.Languages {
+			if err := env.SetupTeamLanguage(owner, repo, lang, content); err != nil {
+				return err
+			}
 		}
 	}
 

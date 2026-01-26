@@ -15,6 +15,14 @@ type Client struct {
 	rest *api.RESTClient
 }
 
+// IsNotFoundError returns true if the error is a 404 Not Found from the GitHub API.
+func IsNotFoundError(err error) bool {
+	if httpErr, ok := err.(*api.HTTPError); ok {
+		return httpErr.StatusCode == http.StatusNotFound
+	}
+	return false
+}
+
 // FetchResult contains the result of a fetch operation.
 type FetchResult struct {
 	Content     string
