@@ -661,3 +661,316 @@ Default Rust.`
 	assert.True(t, asserter.ContainsText("Default Rust"),
 		"rust should fallback to default repo")
 }
+
+// TestIntegration_SkillsBasicSync tests basic skill sync to Claude directory.
+func TestIntegration_SkillsBasicSync(t *testing.T) {
+	env := NewTestEnv(t)
+	defer env.Cleanup()
+
+	owner, repo := "acme", "standards"
+
+	// Setup team skill
+	teamSkill := `---
+name: code-review
+description: Thorough code review
+allowed-tools: Read Grep Glob
+---
+
+# Code Review
+
+Review the code carefully.`
+
+	err := env.SetupTeamSkill(owner, repo, "code-review", teamSkill)
+	require.NoError(t, err)
+
+	// Run sync
+	count, err := env.RunSyncSkills(owner, repo)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count, "should sync 1 skill")
+
+	// Read output and verify
+	output, err := env.ReadClaudeSkill("code-review")
+	require.NoError(t, err)
+
+	assert.Contains(t, output, "Managed by staghorn", "should have managed header")
+	assert.Contains(t, output, "Source: team", "should have team source")
+	assert.Contains(t, output, "name: code-review", "should contain skill name")
+	assert.Contains(t, output, "Review the code carefully", "should contain skill body")
+}
+
+// TestIntegration_SkillsPrecedence tests that personal skills override team skills.
+func TestIntegration_SkillsPrecedence(t *testing.T) {
+	env := NewTestEnv(t)
+	defer env.Cleanup()
+
+	owner, repo := "acme", "standards"
+
+	// Setup team skill
+	teamSkill := `---
+name: code-review
+description: Team code review
+allowed-tools: Read Grep
+---
+
+Team review instructions.`
+
+	// Setup personal skill with same name (should override)
+	personalSkill := `---
+name: code-review
+description: My personal code review
+allowed-tools: Read Grep Glob WebSearch
+---
+
+My custom review instructions.`
+
+	err := env.SetupTeamSkill(owner, repo, "code-review", teamSkill)
+	require.NoError(t, err)
+
+	err = env.SetupPersonalSkill("code-review", personalSkill)
+	require.NoError(t, err)
+
+	count, err := env.RunSyncSkills(owner, repo)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count, "should have 1 unique skill (personal overrides team)")
+
+	output, err := env.ReadClaudeSkill("code-review")
+	require.NoError(t, err)
+
+	// Personal should win
+	assert.Contains(t, output, "Source: personal", "should have personal source (higher precedence)")
+	assert.Contains(t, output, "My custom review instructions", "should contain personal content")
+	assert.NotContains(t, output, "Team review instructions", "should NOT contain team content")
+}
+
+// TestIntegration_SkillsWithSupportingFiles tests skills with templates and scripts.
+func TestIntegration_SkillsWithSupportingFiles(t *testing.T) {
+	env := NewTestEnv(t)
+	defer env.Cleanup()
+
+	owner, repo := "acme", "standards"
+
+	skillMD := `---
+name: test-gen
+description: Generate tests with templates
+allowed-tools: Read Grep Glob Write
+---
+
+# Test Generation
+
+Use the templates in templates/ directory.`
+
+	supportingFiles := map[string]string{
+		"templates/jest.md":   "# Jest Template\n\nUse describe blocks.",
+		"templates/pytest.md": "# Pytest Template\n\nUse fixtures.",
+		"scripts/validate.sh": "#!/bin/bash\necho 'Validating...'",
+	}
+
+	err := env.SetupTeamSkillWithFiles(owner, repo, "test-gen", skillMD, supportingFiles)
+	require.NoError(t, err)
+
+	count, err := env.RunSyncSkills(owner, repo)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count, "should sync 1 skill")
+
+	// Verify SKILL.md
+	output, err := env.ReadClaudeSkill("test-gen")
+	require.NoError(t, err)
+	assert.Contains(t, output, "Use the templates in templates/ directory", "should contain skill body")
+
+	// Verify supporting files were copied
+	jestTemplate, err := env.ReadClaudeSkillFile("test-gen", "templates/jest.md")
+	require.NoError(t, err)
+	assert.Contains(t, jestTemplate, "Use describe blocks", "jest template should be copied")
+
+	pytestTemplate, err := env.ReadClaudeSkillFile("test-gen", "templates/pytest.md")
+	require.NoError(t, err)
+	assert.Contains(t, pytestTemplate, "Use fixtures", "pytest template should be copied")
+
+	script, err := env.ReadClaudeSkillFile("test-gen", "scripts/validate.sh")
+	require.NoError(t, err)
+	assert.Contains(t, script, "Validating", "script should be copied")
+}
+
+// TestIntegration_SkillsCollisionDetection tests that staghorn won't overwrite user skills.
+func TestIntegration_SkillsCollisionDetection(t *testing.T) {
+	env := NewTestEnv(t)
+	defer env.Cleanup()
+
+	owner, repo := "acme", "standards"
+
+	// Create existing user skill (NOT managed by staghorn)
+	userSkill := `---
+name: my-custom-skill
+description: User's own skill
+---
+
+My custom workflow that I created manually.`
+
+	err := env.SetupExistingClaudeSkill("my-custom-skill", userSkill)
+	require.NoError(t, err)
+
+	// Setup team skill with same name
+	teamSkill := `---
+name: my-custom-skill
+description: Team version trying to overwrite
+---
+
+Team content.`
+
+	err = env.SetupTeamSkill(owner, repo, "my-custom-skill", teamSkill)
+	require.NoError(t, err)
+
+	// Sync should fail for this skill (collision)
+	_, err = env.RunSyncSkills(owner, repo)
+	// The sync returns error when collision is detected
+	require.Error(t, err, "should error when trying to overwrite non-staghorn skill")
+
+	// Verify user skill was NOT overwritten
+	output, err := env.ReadClaudeSkill("my-custom-skill")
+	require.NoError(t, err)
+	assert.Contains(t, output, "My custom workflow that I created manually",
+		"user's skill should be preserved")
+	assert.NotContains(t, output, "Managed by staghorn",
+		"should NOT have staghorn header")
+}
+
+// TestIntegration_SkillsEmptyDirs tests sync with no skills.
+func TestIntegration_SkillsEmptyDirs(t *testing.T) {
+	env := NewTestEnv(t)
+	defer env.Cleanup()
+
+	owner, repo := "acme", "standards"
+
+	// No skills set up - directories don't exist
+
+	count, err := env.RunSyncSkills(owner, repo)
+	require.NoError(t, err)
+	assert.Equal(t, 0, count, "should sync 0 skills")
+}
+
+// TestIntegration_SkillsMultiSource tests skills from different source repos.
+func TestIntegration_SkillsMultiSource(t *testing.T) {
+	env := NewTestEnv(t)
+	defer env.Cleanup()
+
+	// Setup: code-review from default repo (acme/standards)
+	codeReviewSkill := `---
+name: code-review
+description: Team code review from acme
+allowed-tools: Read Grep Glob
+---
+
+Review code using team standards.`
+	err := env.SetupTeamSkill("acme", "standards", "code-review", codeReviewSkill)
+	require.NoError(t, err)
+
+	// Setup: react skill from vercel-labs/agent-skills
+	reactSkill := `---
+name: react
+description: React development patterns from Vercel
+allowed-tools: Read Grep Glob Write
+---
+
+# React Patterns
+
+Use React Server Components when possible.`
+	err = env.SetupTeamSkill("vercel-labs", "agent-skills", "react", reactSkill)
+	require.NoError(t, err)
+
+	// Setup: security-audit from community/security
+	securitySkill := `---
+name: security-audit
+description: Security audit from community
+allowed-tools: Read Grep Glob
+context: fork
+agent: Explore
+---
+
+# Security Audit
+
+Check for OWASP Top 10 vulnerabilities.`
+	err = env.SetupTeamSkill("community", "security", "security-audit", securitySkill)
+	require.NoError(t, err)
+
+	// Create multi-source config
+	cfg := &config.Config{
+		Version: 1,
+		Source: config.Source{
+			Multi: &config.SourceConfig{
+				Default: "acme/standards",
+				Skills: map[string]string{
+					"react":          "vercel-labs/agent-skills",
+					"security-audit": "community/security",
+				},
+			},
+		},
+	}
+
+	// Run multi-source sync
+	count, err := env.RunSyncSkillsMultiSource(cfg)
+	require.NoError(t, err)
+	assert.Equal(t, 3, count, "should sync 3 skills from different repos")
+
+	// Verify code-review from default repo
+	codeReviewOutput, err := env.ReadClaudeSkill("code-review")
+	require.NoError(t, err)
+	assert.Contains(t, codeReviewOutput, "Review code using team standards",
+		"code-review should come from acme/standards")
+
+	// Verify react from vercel-labs
+	reactOutput, err := env.ReadClaudeSkill("react")
+	require.NoError(t, err)
+	assert.Contains(t, reactOutput, "React Server Components",
+		"react should come from vercel-labs/agent-skills")
+
+	// Verify security-audit from community
+	securityOutput, err := env.ReadClaudeSkill("security-audit")
+	require.NoError(t, err)
+	assert.Contains(t, securityOutput, "OWASP Top 10",
+		"security-audit should come from community/security")
+}
+
+// TestIntegration_SkillsMultipleFromSameTeam tests multiple skills from default repo.
+func TestIntegration_SkillsMultipleFromSameTeam(t *testing.T) {
+	env := NewTestEnv(t)
+	defer env.Cleanup()
+
+	owner, repo := "acme", "standards"
+
+	// Setup multiple skills from same repo
+	skills := map[string]string{
+		"code-review": `---
+name: code-review
+description: Code review
+---
+
+Review code.`,
+		"test-gen": `---
+name: test-gen
+description: Generate tests
+---
+
+Generate tests.`,
+		"refactor": `---
+name: refactor
+description: Refactoring helper
+---
+
+Refactor code.`,
+	}
+
+	for name, content := range skills {
+		err := env.SetupTeamSkill(owner, repo, name, content)
+		require.NoError(t, err)
+	}
+
+	count, err := env.RunSyncSkills(owner, repo)
+	require.NoError(t, err)
+	assert.Equal(t, 3, count, "should sync 3 skills")
+
+	// Verify all skills exist
+	for name := range skills {
+		_, err := env.ReadClaudeSkill(name)
+		require.NoError(t, err, "%s should exist", name)
+	}
+}

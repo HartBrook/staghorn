@@ -18,6 +18,7 @@ import (
 	"github.com/HartBrook/staghorn/internal/merge"
 	"github.com/HartBrook/staghorn/internal/optimize"
 	"github.com/HartBrook/staghorn/internal/rules"
+	"github.com/HartBrook/staghorn/internal/skills"
 	"github.com/spf13/cobra"
 )
 
@@ -28,6 +29,7 @@ type syncOptions struct {
 	commandsOnly  bool
 	languagesOnly bool
 	rulesOnly     bool
+	skillsOnly    bool
 	fetchOnly     bool
 	applyOnly     bool
 	claudeOnly    bool
@@ -70,7 +72,17 @@ func (o *syncOptions) shouldSyncClaudeCommands() bool {
 
 // shouldSyncClaudeRules returns true if rules should be synced to Claude Code.
 func (o *syncOptions) shouldSyncClaudeRules() bool {
-	return !o.configOnly && !o.languagesOnly && !o.commandsOnly && !o.fetchOnly
+	return !o.configOnly && !o.languagesOnly && !o.commandsOnly && !o.skillsOnly && !o.fetchOnly
+}
+
+// shouldSyncSkills returns true if skills should be synced.
+func (o *syncOptions) shouldSyncSkills() bool {
+	return !o.configOnly && !o.commandsOnly && !o.languagesOnly && !o.rulesOnly && !o.claudeOnly
+}
+
+// shouldSyncClaudeSkills returns true if skills should be synced to Claude Code.
+func (o *syncOptions) shouldSyncClaudeSkills() bool {
+	return !o.configOnly && !o.languagesOnly && !o.commandsOnly && !o.rulesOnly && !o.fetchOnly
 }
 
 // repoContext holds the branch info for a single repo.
@@ -108,7 +120,8 @@ This is the main command for keeping your Claude Code config up to date.`,
 	cmd.Flags().BoolVar(&opts.commandsOnly, "commands-only", false, "Only sync commands, skip config, languages, and rules")
 	cmd.Flags().BoolVar(&opts.languagesOnly, "languages-only", false, "Only sync languages, skip config, commands, and rules")
 	cmd.Flags().BoolVar(&opts.rulesOnly, "rules-only", false, "Only sync rules, skip config, commands, and languages")
-	cmd.Flags().BoolVar(&opts.claudeOnly, "claude-only", false, "Only sync commands and rules to ~/.claude/, skip config apply")
+	cmd.Flags().BoolVar(&opts.skillsOnly, "skills-only", false, "Only sync skills, skip config, commands, languages, and rules")
+	cmd.Flags().BoolVar(&opts.claudeOnly, "claude-only", false, "Only sync commands, rules, and skills to ~/.claude/, skip config apply")
 
 	return cmd
 }
@@ -270,6 +283,18 @@ func runSync(ctx context.Context, opts *syncOptions) error {
 		}
 	}
 
+	// Sync skills
+	if opts.shouldSyncSkills() {
+		skillCount, err := syncSkills(ctx, client, owner, repo, branch, paths)
+		if err != nil {
+			printWarning("Failed to sync skills: %v", err)
+		} else if skillCount > 0 {
+			printSuccess("Synced %d skills", skillCount)
+		} else if opts.skillsOnly {
+			fmt.Println("No skills found in team repository")
+		}
+	}
+
 	// Apply to ~/.claude/CLAUDE.md
 	if opts.shouldApplyConfig() {
 		fmt.Println()
@@ -296,6 +321,17 @@ func runSync(ctx context.Context, opts *syncOptions) error {
 			printWarning("Failed to sync Claude rules: %v", err)
 		} else if claudeRuleCount > 0 {
 			printSuccess("Synced %d rules to Claude Code", claudeRuleCount)
+		}
+	}
+
+	// Sync skills to Claude Code
+	if opts.shouldSyncClaudeSkills() {
+		claudeSkillCount, err := syncClaudeSkills(paths, owner, repo)
+		if err != nil {
+			printWarning("Failed to sync Claude skills: %v", err)
+		} else if claudeSkillCount > 0 {
+			printSuccess("Synced %d skills to Claude Code", claudeSkillCount)
+			fmt.Printf("  %s Skills are available via /skill-name in Claude Code\n", dim("Tip:"))
 		}
 	}
 
@@ -1111,6 +1147,16 @@ func runMultiSourceSync(ctx context.Context, cfg *config.Config, paths *config.P
 		}
 	}
 
+	// Sync skills with multi-source support
+	if opts.shouldSyncSkills() {
+		skillCount, err := syncSkillsMultiSource(ctx, client, cfg, repoContexts, paths)
+		if err != nil {
+			printWarning("Failed to sync skills: %v", err)
+		} else if skillCount > 0 {
+			printSuccess("Synced %d skills", skillCount)
+		}
+	}
+
 	// Apply config
 	if opts.shouldApplyConfig() {
 		fmt.Println()
@@ -1136,6 +1182,17 @@ func runMultiSourceSync(ctx context.Context, cfg *config.Config, paths *config.P
 			printWarning("Failed to sync Claude rules: %v", err)
 		} else if claudeRuleCount > 0 {
 			printSuccess("Synced %d rules to Claude Code", claudeRuleCount)
+		}
+	}
+
+	// Sync skills to Claude Code
+	if opts.shouldSyncClaudeSkills() {
+		claudeSkillCount, err := syncClaudeSkills(paths, defaultCtx.owner, defaultCtx.repo)
+		if err != nil {
+			printWarning("Failed to sync Claude skills: %v", err)
+		} else if claudeSkillCount > 0 {
+			printSuccess("Synced %d skills to Claude Code", claudeSkillCount)
+			fmt.Printf("  %s Skills are available via /skill-name in Claude Code\n", dim("Tip:"))
 		}
 	}
 
@@ -1386,4 +1443,217 @@ func loadMultiSourceLanguageFiles(cfg *config.Config, paths *config.Paths, repoC
 		}
 	}
 	return languageFiles
+}
+
+// syncSkills fetches skills from the team repo's skills/ directory.
+// Skills are directories containing SKILL.md plus optional supporting files.
+func syncSkills(ctx context.Context, client *github.Client, owner, repo, branch string, paths *config.Paths) (int, error) {
+	// List skills directory (top-level entries are skill directories)
+	entries, err := client.ListDirectory(ctx, owner, repo, "skills", branch)
+	if err != nil {
+		return 0, err
+	}
+
+	if entries == nil {
+		return 0, nil
+	}
+
+	// Create local skills cache directory
+	skillsDir := paths.TeamSkillsDir(owner, repo)
+
+	// Clear existing cache to handle deletions
+	if err := os.RemoveAll(skillsDir); err != nil {
+		return 0, fmt.Errorf("failed to clear skills cache: %w", err)
+	}
+
+	// Sync each skill directory
+	count := 0
+	for _, entry := range entries {
+		if entry.Type != "dir" {
+			continue
+		}
+
+		// Sync this skill directory recursively
+		skillLocalDir := filepath.Join(skillsDir, entry.Name)
+		fileCount, err := syncSkillDir(ctx, client, owner, repo, branch, entry.Path, skillLocalDir)
+		if err != nil {
+			printWarning("Failed to sync skill %s: %v", entry.Name, err)
+			continue
+		}
+
+		if fileCount > 0 {
+			count++
+		}
+	}
+
+	return count, nil
+}
+
+// syncSkillDir syncs a single skill directory recursively.
+func syncSkillDir(ctx context.Context, client *github.Client, owner, repo, branch, remotePath, localDir string) (int, error) {
+	entries, err := client.ListDirectory(ctx, owner, repo, remotePath, branch)
+	if err != nil {
+		return 0, err
+	}
+
+	if entries == nil {
+		return 0, nil
+	}
+
+	// Ensure local directory exists
+	if err := os.MkdirAll(localDir, 0755); err != nil {
+		return 0, fmt.Errorf("failed to create skill directory: %w", err)
+	}
+
+	count := 0
+	for _, entry := range entries {
+		if entry.Type == "dir" {
+			// Recurse into subdirectory
+			subLocalDir := filepath.Join(localDir, entry.Name)
+			subCount, err := syncSkillDir(ctx, client, owner, repo, branch, entry.Path, subLocalDir)
+			if err != nil {
+				printWarning("Failed to sync skill subdirectory %s: %v", entry.Name, err)
+				continue
+			}
+			count += subCount
+		} else if entry.Type == "file" {
+			// Fetch and cache file
+			result, err := client.FetchFile(ctx, owner, repo, entry.Path, branch)
+			if err != nil {
+				printWarning("Failed to fetch skill file %s: %v", entry.Name, err)
+				continue
+			}
+
+			localPath := filepath.Join(localDir, entry.Name)
+			if err := os.WriteFile(localPath, []byte(result.Content), 0644); err != nil {
+				printWarning("Failed to write skill file %s: %v", entry.Name, err)
+				continue
+			}
+
+			count++
+		}
+	}
+
+	return count, nil
+}
+
+// syncClaudeSkills syncs staghorn skills to Claude Code skills directory.
+func syncClaudeSkills(paths *config.Paths, owner, repo string) (int, error) {
+	// Load skills from all sources using the registry
+	registry, err := skills.LoadRegistry(
+		paths.TeamSkillsDir(owner, repo),
+		paths.PersonalSkills,
+		"", // No project dir for global sync
+	)
+	if err != nil {
+		return 0, fmt.Errorf("failed to load skills: %w", err)
+	}
+
+	allSkills := registry.All()
+	if len(allSkills) == 0 {
+		return 0, nil
+	}
+
+	// Create Claude skills directory
+	claudeDir := paths.ClaudeSkillsDir()
+	if err := os.MkdirAll(claudeDir, 0755); err != nil {
+		return 0, fmt.Errorf("failed to create Claude skills directory: %w", err)
+	}
+
+	// Sync each skill
+	count := 0
+	for _, skill := range allSkills {
+		filesWritten, err := skills.SyncToClaude(skill, claudeDir)
+		if err != nil {
+			if strings.Contains(err.Error(), "not managed by staghorn") {
+				printWarning("Skipping skill %s: existing skill not managed by staghorn", skill.Name)
+			} else {
+				printWarning("Failed to sync skill %s: %v", skill.Name, err)
+			}
+			continue
+		}
+		if filesWritten > 0 {
+			count++
+		}
+	}
+
+	return count, nil
+}
+
+// isExplicitlyConfiguredSkill returns true if the skill has an explicit source configured.
+func isExplicitlyConfiguredSkill(cfg *config.Config, skill string) bool {
+	if cfg.Source.Multi != nil && cfg.Source.Multi.Skills != nil {
+		_, ok := cfg.Source.Multi.Skills[skill]
+		return ok
+	}
+	return false
+}
+
+// syncSkillsMultiSource fetches skills from their configured source repos.
+func syncSkillsMultiSource(ctx context.Context, client *github.Client, cfg *config.Config, repoContexts map[string]*repoContext, paths *config.Paths) (int, error) {
+	// First, discover all skills from the default repo
+	defaultRepoStr := cfg.Source.DefaultRepo()
+	defaultCtx := repoContexts[defaultRepoStr]
+	if defaultCtx == nil {
+		return 0, fmt.Errorf("no context for default repo %s", defaultRepoStr)
+	}
+
+	// Get skills from default repo
+	allSkills := make(map[string]bool)
+	entries, err := client.ListDirectory(ctx, defaultCtx.owner, defaultCtx.repo, "skills", defaultCtx.branch)
+	if err == nil && entries != nil {
+		for _, entry := range entries {
+			if entry.Type == "dir" {
+				allSkills[entry.Name] = true
+			}
+		}
+	}
+
+	// Add any explicitly configured skill sources
+	if cfg.Source.Multi != nil && cfg.Source.Multi.Skills != nil {
+		for skill := range cfg.Source.Multi.Skills {
+			allSkills[skill] = true
+		}
+	}
+
+	// Sync each skill from its configured source
+	count := 0
+	for skill := range allSkills {
+		sourceRepoStr := cfg.Source.RepoForSkill(skill)
+		repoCtx := repoContexts[sourceRepoStr]
+		if repoCtx == nil {
+			printWarning("No context for skill %s source %s", skill, sourceRepoStr)
+			continue
+		}
+
+		// Sync this skill from its source
+		skillPath := fmt.Sprintf("skills/%s", skill)
+		skillLocalDir := filepath.Join(paths.TeamSkillsDir(repoCtx.owner, repoCtx.repo), skill)
+
+		// Check if skill exists in remote
+		entries, err := client.ListDirectory(ctx, repoCtx.owner, repoCtx.repo, skillPath, repoCtx.branch)
+		if err != nil {
+			handleMultiSourceFetchError("skill", skill, sourceRepoStr, err, isExplicitlyConfiguredSkill(cfg, skill))
+			continue
+		}
+		if entries == nil {
+			if isExplicitlyConfiguredSkill(cfg, skill) {
+				printWarning("Skill %s not found in explicitly configured source %s", skill, sourceRepoStr)
+			}
+			continue
+		}
+
+		// Sync the skill directory
+		fileCount, err := syncSkillDir(ctx, client, repoCtx.owner, repoCtx.repo, repoCtx.branch, skillPath, skillLocalDir)
+		if err != nil {
+			printWarning("Failed to sync skill %s from %s: %v", skill, sourceRepoStr, err)
+			continue
+		}
+
+		if fileCount > 0 {
+			count++
+		}
+	}
+
+	return count, nil
 }

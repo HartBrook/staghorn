@@ -11,6 +11,7 @@ import (
 	"github.com/HartBrook/staghorn/internal/language"
 	"github.com/HartBrook/staghorn/internal/merge"
 	"github.com/HartBrook/staghorn/internal/rules"
+	"github.com/HartBrook/staghorn/internal/skills"
 	"gopkg.in/yaml.v3"
 )
 
@@ -260,7 +261,7 @@ func (e *TestEnv) RunSync(owner, repo string, cfg *config.Config) error {
 	}
 	output := merge.MergeWithLanguages(layers, mergeOpts)
 
-	// Write to output
+	// Write to output (RunSync)
 	return os.WriteFile(e.GetOutputPath(), []byte(output), 0644)
 }
 
@@ -361,6 +362,168 @@ func (e *TestEnv) RunMultiSourceSync(cfg *config.Config) error {
 	}
 	output := merge.MergeWithLanguages(layers, mergeOpts)
 
-	// Write to output
+	// Write to output (RunMultiSourceSync)
 	return os.WriteFile(e.GetOutputPath(), []byte(output), 0644)
+}
+
+// SetupTeamSkill writes a team skill to cache.
+// The skill is a directory containing SKILL.md and optional supporting files.
+func (e *TestEnv) SetupTeamSkill(owner, repo, skillName, skillMD string) error {
+	skillsDir := e.Paths.TeamSkillsDir(owner, repo)
+	skillDir := filepath.Join(skillsDir, skillName)
+	if err := os.MkdirAll(skillDir, 0755); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(skillMD), 0644)
+}
+
+// SetupTeamSkillWithFiles writes a team skill with supporting files.
+func (e *TestEnv) SetupTeamSkillWithFiles(owner, repo, skillName, skillMD string, files map[string]string) error {
+	skillsDir := e.Paths.TeamSkillsDir(owner, repo)
+	skillDir := filepath.Join(skillsDir, skillName)
+	if err := os.MkdirAll(skillDir, 0755); err != nil {
+		return err
+	}
+
+	// Write SKILL.md
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(skillMD), 0644); err != nil {
+		return err
+	}
+
+	// Write supporting files
+	for relPath, content := range files {
+		fullPath := filepath.Join(skillDir, relPath)
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// SetupPersonalSkill writes a personal skill.
+func (e *TestEnv) SetupPersonalSkill(skillName, skillMD string) error {
+	skillDir := filepath.Join(e.Paths.PersonalSkills, skillName)
+	if err := os.MkdirAll(skillDir, 0755); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(skillMD), 0644)
+}
+
+// GetClaudeSkillsDir returns the path to ~/.claude/skills.
+func (e *TestEnv) GetClaudeSkillsDir() string {
+	return filepath.Join(e.ClaudeDir, "skills")
+}
+
+// ReadClaudeSkill reads SKILL.md from ~/.claude/skills/<name>/.
+func (e *TestEnv) ReadClaudeSkill(skillName string) (string, error) {
+	content, err := os.ReadFile(filepath.Join(e.GetClaudeSkillsDir(), skillName, "SKILL.md"))
+	if err != nil {
+		return "", err
+	}
+	return string(content), nil
+}
+
+// ReadClaudeSkillFile reads a supporting file from a Claude skill directory.
+func (e *TestEnv) ReadClaudeSkillFile(skillName, relPath string) (string, error) {
+	content, err := os.ReadFile(filepath.Join(e.GetClaudeSkillsDir(), skillName, relPath))
+	if err != nil {
+		return "", err
+	}
+	return string(content), nil
+}
+
+// RunSyncSkills syncs skills from team/personal sources to Claude skills directory.
+func (e *TestEnv) RunSyncSkills(owner, repo string) (int, error) {
+	// Load skills from all sources using the registry
+	registry, err := skills.LoadRegistry(
+		e.Paths.TeamSkillsDir(owner, repo),
+		e.Paths.PersonalSkills,
+		"", // No project dir for global sync
+	)
+	if err != nil {
+		return 0, err
+	}
+
+	allSkills := registry.All()
+	if len(allSkills) == 0 {
+		return 0, nil
+	}
+
+	// Create Claude skills directory
+	claudeSkillsDir := e.GetClaudeSkillsDir()
+	if err := os.MkdirAll(claudeSkillsDir, 0755); err != nil {
+		return 0, err
+	}
+
+	// Sync each skill
+	count := 0
+	for _, skill := range allSkills {
+		_, err := skills.SyncToClaude(skill, claudeSkillsDir)
+		if err != nil {
+			return count, err
+		}
+		count++
+	}
+
+	return count, nil
+}
+
+// RunSyncSkillsMultiSource syncs skills from multiple source repos.
+func (e *TestEnv) RunSyncSkillsMultiSource(cfg *config.Config) (int, error) {
+	// Collect team skills directories from all repos
+	var teamSkillsDirs []string
+	for _, repoStr := range cfg.Source.AllRepos() {
+		owner, repo, err := config.ParseRepo(repoStr)
+		if err != nil {
+			continue
+		}
+		teamSkillsDirs = append(teamSkillsDirs, e.Paths.TeamSkillsDir(owner, repo))
+	}
+
+	// Load skills from all sources
+	registry, err := skills.LoadRegistryWithMultipleDirs(
+		teamSkillsDirs,
+		e.Paths.PersonalSkills,
+		"", // No project dir for global sync
+	)
+	if err != nil {
+		return 0, err
+	}
+
+	allSkills := registry.All()
+	if len(allSkills) == 0 {
+		return 0, nil
+	}
+
+	// Create Claude skills directory
+	claudeSkillsDir := e.GetClaudeSkillsDir()
+	if err := os.MkdirAll(claudeSkillsDir, 0755); err != nil {
+		return 0, err
+	}
+
+	// Sync each skill
+	count := 0
+	for _, skill := range allSkills {
+		_, err := skills.SyncToClaude(skill, claudeSkillsDir)
+		if err != nil {
+			continue // Skip errors for multi-source (may have collision warnings)
+		}
+		count++
+	}
+
+	return count, nil
+}
+
+// SetupExistingClaudeSkill creates a skill in ~/.claude/skills that is NOT managed by staghorn.
+// Used for testing collision detection.
+func (e *TestEnv) SetupExistingClaudeSkill(skillName, skillMD string) error {
+	skillDir := filepath.Join(e.GetClaudeSkillsDir(), skillName)
+	if err := os.MkdirAll(skillDir, 0755); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(skillMD), 0644)
 }

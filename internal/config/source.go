@@ -29,6 +29,10 @@ type SourceConfig struct {
 	// Commands maps command names to their source repos.
 	// Example: { "code-review": "acme/internal-commands" }
 	Commands map[string]string `yaml:"commands,omitempty"`
+
+	// Skills maps skill names to their source repos.
+	// Example: { "react": "vercel-labs/agent-skills/skills/react" }
+	Skills map[string]string `yaml:"skills,omitempty"`
 }
 
 // Source wraps the flexible source configuration.
@@ -110,6 +114,16 @@ func (s *Source) RepoForCommand(cmd string) string {
 	return s.DefaultRepo()
 }
 
+// RepoForSkill returns the repository to use for a specific skill.
+func (s *Source) RepoForSkill(skill string) string {
+	if s.Multi != nil && s.Multi.Skills != nil {
+		if repo, ok := s.Multi.Skills[skill]; ok {
+			return repo
+		}
+	}
+	return s.DefaultRepo()
+}
+
 // AllRepos returns all unique repositories referenced by this source config.
 // Useful for syncing all sources at once.
 func (s *Source) AllRepos() []string {
@@ -131,6 +145,9 @@ func (s *Source) AllRepos() []string {
 			addRepo(repo)
 		}
 		for _, repo := range s.Multi.Commands {
+			addRepo(repo)
+		}
+		for _, repo := range s.Multi.Skills {
 			addRepo(repo)
 		}
 	}
@@ -212,6 +229,11 @@ func (s *Source) Validate() error {
 		for cmd, repo := range s.Multi.Commands {
 			if _, _, err := ParseRepo(repo); err != nil {
 				return fmt.Errorf("invalid source for command %q: %w", cmd, err)
+			}
+		}
+		for skill, repo := range s.Multi.Skills {
+			if _, _, err := ParseRepo(repo); err != nil {
+				return fmt.Errorf("invalid source for skill %q: %w", skill, err)
 			}
 		}
 	}

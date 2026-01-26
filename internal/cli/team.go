@@ -11,6 +11,7 @@ import (
 	"github.com/HartBrook/staghorn/internal/commands"
 	"github.com/HartBrook/staghorn/internal/config"
 	"github.com/HartBrook/staghorn/internal/eval"
+	"github.com/HartBrook/staghorn/internal/skills"
 	"github.com/HartBrook/staghorn/internal/starter"
 	"github.com/spf13/cobra"
 )
@@ -371,6 +372,24 @@ func runTeamValidate() error {
 		fmt.Printf("%s evals/ - directory not found (optional)\n", warningIcon)
 	}
 
+	// Check skills/ (optional)
+	if _, err := os.Stat("skills"); err == nil {
+		skillsValid, skillsTotal, skillErrs := validateSkills("skills")
+		if skillsTotal == 0 {
+			fmt.Printf("%s skills/ - directory empty\n", warningIcon)
+			warnings++
+		} else if len(skillErrs) > 0 {
+			for _, e := range skillErrs {
+				printError("%s", e)
+			}
+			errors += len(skillErrs)
+		} else {
+			printSuccess("skills/ - %d valid skills", skillsValid)
+		}
+	} else {
+		fmt.Printf("%s skills/ - directory not found (optional)\n", warningIcon)
+	}
+
 	// Summary
 	fmt.Println()
 	if errors > 0 {
@@ -690,6 +709,31 @@ func validateEvals(dir string) (valid, total int, errs []string) {
 		_, err := eval.ParseFile(path, eval.SourceTeam)
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("%s - %v", path, err))
+		} else {
+			valid++
+		}
+	}
+
+	return valid, total, errs
+}
+
+func validateSkills(dir string) (valid, total int, errs []string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0, 0, nil
+	}
+
+	for _, entry := range entries {
+		// Skills are directories containing SKILL.md
+		if !entry.IsDir() {
+			continue
+		}
+		total++
+
+		skillDir := filepath.Join(dir, entry.Name())
+		_, err := skills.ParseDir(skillDir, skills.SourceTeam)
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("%s - %v", skillDir, err))
 		} else {
 			valid++
 		}
