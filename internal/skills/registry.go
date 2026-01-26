@@ -2,7 +2,7 @@ package skills
 
 import (
 	"fmt"
-	"os"
+	"log"
 	"sort"
 )
 
@@ -173,7 +173,7 @@ func LoadRegistry(teamDir, personalDir, projectDir string) (*Registry, error) {
 		}
 		skills, err := LoadFromDirectory(s.dir, s.source)
 		if err != nil {
-			return nil, fmt.Errorf("failed to load %s skills: %w", s.source.Label(), err)
+			return nil, fmt.Errorf("failed to load %s skills from %s: %w", s.source.Label(), s.dir, err)
 		}
 		registry.AddAll(skills)
 	}
@@ -194,7 +194,7 @@ func LoadRegistryWithMultipleDirs(teamDirs []string, personalDir, projectDir str
 		skills, err := LoadFromDirectory(teamDir, SourceTeam)
 		if err != nil {
 			// Log warning but continue - some dirs may not have skills
-			fmt.Fprintf(os.Stderr, "Warning: failed to load team skills from %s: %v\n", teamDir, err)
+			log.Printf("Warning: failed to load team skills from %s: %v", teamDir, err)
 			continue
 		}
 		registry.AddAll(skills)

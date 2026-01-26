@@ -6,6 +6,7 @@ package skills
 import (
 	"bufio"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -261,7 +262,7 @@ func LoadFromDirectory(dir string, source Source) ([]*Skill, error) {
 		skill, err := ParseDir(skillDir, source)
 		if err != nil {
 			// Log warning but continue loading other skills
-			fmt.Fprintf(os.Stderr, "Warning: failed to parse skill %s: %v\n", entry.Name(), err)
+			log.Printf("Warning: failed to parse skill %s: %v", entry.Name(), err)
 			continue
 		}
 

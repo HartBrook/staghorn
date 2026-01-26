@@ -23,8 +23,13 @@ func ConvertToClaude(skill *Skill) string {
 
 	// Build frontmatter map to preserve field order and include all fields
 	fm := buildClaudeFrontmatter(skill)
-	yamlBytes, _ := yaml.Marshal(fm)
-	sb.Write(yamlBytes)
+	yamlBytes, err := yaml.Marshal(fm)
+	if err != nil {
+		// Fallback to minimal frontmatter if marshal fails
+		sb.WriteString(fmt.Sprintf("name: %s\ndescription: %s\n", skill.Name, skill.Description))
+	} else {
+		sb.Write(yamlBytes)
+	}
 	sb.WriteString("---\n\n")
 
 	// Add staghorn header after frontmatter

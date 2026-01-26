@@ -343,176 +343,57 @@ func runSync(ctx context.Context, opts *syncOptions) error {
 	return nil
 }
 
-// syncCommands fetches commands from the team repo's commands/ directory.
-func syncCommands(ctx context.Context, client *github.Client, owner, repo, branch string, paths *config.Paths) (int, error) {
-	// List commands directory
-	entries, err := client.ListDirectory(ctx, owner, repo, "commands", branch)
-	if err != nil {
-		return 0, err
-	}
-
-	if entries == nil {
-		// No commands directory
-		return 0, nil
-	}
-
-	// Create local commands cache directory
-	commandsDir := paths.TeamCommandsDir(owner, repo)
-	if err := os.MkdirAll(commandsDir, 0755); err != nil {
-		return 0, fmt.Errorf("failed to create commands directory: %w", err)
-	}
-
-	// Fetch each .md file
-	count := 0
-	for _, entry := range entries {
-		if entry.Type != "file" || !strings.HasSuffix(entry.Name, ".md") {
-			continue
-		}
-
-		result, err := client.FetchFile(ctx, owner, repo, entry.Path, branch)
-		if err != nil {
-			printWarning("Failed to fetch command %s: %v", entry.Name, err)
-			continue
-		}
-
-		localPath := filepath.Join(commandsDir, entry.Name)
-		if err := os.WriteFile(localPath, []byte(result.Content), 0644); err != nil {
-			printWarning("Failed to write command %s: %v", entry.Name, err)
-			continue
-		}
-
-		count++
-	}
-
-	return count, nil
+// syncDirectoryOpts configures the syncDirectoryContents helper.
+type syncDirectoryOpts struct {
+	remoteDir  string   // Remote directory name (e.g., "commands")
+	localDir   string   // Local directory path to sync to
+	itemType   string   // Human-readable name for warnings (e.g., "command")
+	extensions []string // File extensions to sync (e.g., []string{".md"})
 }
 
-// syncTemplates fetches project templates from the team repo's templates/ directory.
-func syncTemplates(ctx context.Context, client *github.Client, owner, repo, branch string, paths *config.Paths) (int, error) {
-	// List templates directory
-	entries, err := client.ListDirectory(ctx, owner, repo, "templates", branch)
+// syncDirectoryContents fetches files from a remote directory and saves them locally.
+// This is a generic helper used by syncCommands, syncTemplates, syncLanguages, etc.
+func syncDirectoryContents(ctx context.Context, client *github.Client, owner, repo, branch string, opts syncDirectoryOpts) (int, error) {
+	entries, err := client.ListDirectory(ctx, owner, repo, opts.remoteDir, branch)
 	if err != nil {
 		return 0, err
 	}
 
 	if entries == nil {
-		// No templates directory
 		return 0, nil
 	}
 
-	// Create local templates cache directory
-	templatesDir := paths.TeamTemplatesDir(owner, repo)
-	if err := os.MkdirAll(templatesDir, 0755); err != nil {
-		return 0, fmt.Errorf("failed to create templates directory: %w", err)
+	if err := os.MkdirAll(opts.localDir, 0755); err != nil {
+		return 0, fmt.Errorf("failed to create %s directory: %w", opts.itemType, err)
 	}
 
-	// Fetch each .md file
-	count := 0
-	for _, entry := range entries {
-		if entry.Type != "file" || !strings.HasSuffix(entry.Name, ".md") {
-			continue
-		}
-
-		result, err := client.FetchFile(ctx, owner, repo, entry.Path, branch)
-		if err != nil {
-			printWarning("Failed to fetch template %s: %v", entry.Name, err)
-			continue
-		}
-
-		localPath := filepath.Join(templatesDir, entry.Name)
-		if err := os.WriteFile(localPath, []byte(result.Content), 0644); err != nil {
-			printWarning("Failed to write template %s: %v", entry.Name, err)
-			continue
-		}
-
-		count++
-	}
-
-	return count, nil
-}
-
-// syncLanguages fetches language configs from the team repo's languages/ directory.
-func syncLanguages(ctx context.Context, client *github.Client, owner, repo, branch string, paths *config.Paths) (int, error) {
-	// List languages directory
-	entries, err := client.ListDirectory(ctx, owner, repo, "languages", branch)
-	if err != nil {
-		return 0, err
-	}
-
-	if entries == nil {
-		// No languages directory
-		return 0, nil
-	}
-
-	// Create local languages cache directory
-	languagesDir := paths.TeamLanguagesDir(owner, repo)
-	if err := os.MkdirAll(languagesDir, 0755); err != nil {
-		return 0, fmt.Errorf("failed to create languages directory: %w", err)
-	}
-
-	// Fetch each .md file
-	count := 0
-	for _, entry := range entries {
-		if entry.Type != "file" || !strings.HasSuffix(entry.Name, ".md") {
-			continue
-		}
-
-		result, err := client.FetchFile(ctx, owner, repo, entry.Path, branch)
-		if err != nil {
-			printWarning("Failed to fetch language config %s: %v", entry.Name, err)
-			continue
-		}
-
-		localPath := filepath.Join(languagesDir, entry.Name)
-		if err := os.WriteFile(localPath, []byte(result.Content), 0644); err != nil {
-			printWarning("Failed to write language config %s: %v", entry.Name, err)
-			continue
-		}
-
-		count++
-	}
-
-	return count, nil
-}
-
-// syncEvals fetches evals from the team repo's evals/ directory.
-func syncEvals(ctx context.Context, client *github.Client, owner, repo, branch string, paths *config.Paths) (int, error) {
-	// List evals directory
-	entries, err := client.ListDirectory(ctx, owner, repo, "evals", branch)
-	if err != nil {
-		return 0, err
-	}
-
-	if entries == nil {
-		// No evals directory
-		return 0, nil
-	}
-
-	// Create local evals cache directory
-	evalsDir := paths.TeamEvalsDir(owner, repo)
-	if err := os.MkdirAll(evalsDir, 0755); err != nil {
-		return 0, fmt.Errorf("failed to create evals directory: %w", err)
-	}
-
-	// Fetch each .yaml/.yml file
 	count := 0
 	for _, entry := range entries {
 		if entry.Type != "file" {
 			continue
 		}
-		if !strings.HasSuffix(entry.Name, ".yaml") && !strings.HasSuffix(entry.Name, ".yml") {
+
+		// Check if file matches any of the allowed extensions
+		hasValidExt := false
+		for _, ext := range opts.extensions {
+			if strings.HasSuffix(entry.Name, ext) {
+				hasValidExt = true
+				break
+			}
+		}
+		if !hasValidExt {
 			continue
 		}
 
 		result, err := client.FetchFile(ctx, owner, repo, entry.Path, branch)
 		if err != nil {
-			printWarning("Failed to fetch eval %s: %v", entry.Name, err)
+			printWarning("Failed to fetch %s %s: %v", opts.itemType, entry.Name, err)
 			continue
 		}
 
-		localPath := filepath.Join(evalsDir, entry.Name)
+		localPath := filepath.Join(opts.localDir, entry.Name)
 		if err := os.WriteFile(localPath, []byte(result.Content), 0644); err != nil {
-			printWarning("Failed to write eval %s: %v", entry.Name, err)
+			printWarning("Failed to write %s %s: %v", opts.itemType, entry.Name, err)
 			continue
 		}
 
@@ -520,6 +401,46 @@ func syncEvals(ctx context.Context, client *github.Client, owner, repo, branch s
 	}
 
 	return count, nil
+}
+
+// syncCommands fetches commands from the team repo's commands/ directory.
+func syncCommands(ctx context.Context, client *github.Client, owner, repo, branch string, paths *config.Paths) (int, error) {
+	return syncDirectoryContents(ctx, client, owner, repo, branch, syncDirectoryOpts{
+		remoteDir:  "commands",
+		localDir:   paths.TeamCommandsDir(owner, repo),
+		itemType:   "command",
+		extensions: []string{".md"},
+	})
+}
+
+// syncTemplates fetches project templates from the team repo's templates/ directory.
+func syncTemplates(ctx context.Context, client *github.Client, owner, repo, branch string, paths *config.Paths) (int, error) {
+	return syncDirectoryContents(ctx, client, owner, repo, branch, syncDirectoryOpts{
+		remoteDir:  "templates",
+		localDir:   paths.TeamTemplatesDir(owner, repo),
+		itemType:   "template",
+		extensions: []string{".md"},
+	})
+}
+
+// syncLanguages fetches language configs from the team repo's languages/ directory.
+func syncLanguages(ctx context.Context, client *github.Client, owner, repo, branch string, paths *config.Paths) (int, error) {
+	return syncDirectoryContents(ctx, client, owner, repo, branch, syncDirectoryOpts{
+		remoteDir:  "languages",
+		localDir:   paths.TeamLanguagesDir(owner, repo),
+		itemType:   "language config",
+		extensions: []string{".md"},
+	})
+}
+
+// syncEvals fetches evals from the team repo's evals/ directory.
+func syncEvals(ctx context.Context, client *github.Client, owner, repo, branch string, paths *config.Paths) (int, error) {
+	return syncDirectoryContents(ctx, client, owner, repo, branch, syncDirectoryOpts{
+		remoteDir:  "evals",
+		localDir:   paths.TeamEvalsDir(owner, repo),
+		itemType:   "eval",
+		extensions: []string{".yaml", ".yml"},
+	})
 }
 
 // syncRules fetches rules from the team repo's rules/ directory (recursive).
@@ -1017,10 +938,16 @@ func checkConfigSizeAndSuggestOptimize(cfg *config.Config, paths *config.Paths, 
 	merged := merge.MergeWithLanguages(layers, mergeOpts)
 	tokens := optimize.CountTokens(merged)
 
+	// Use configured threshold or default
+	threshold := cfg.Optimize.WarnThreshold
+	if threshold == 0 {
+		threshold = 3000 // Default threshold
+	}
+
 	// Warn if over threshold
-	if tokens > 3000 {
+	if tokens > threshold {
 		fmt.Println()
-		printWarning("Merged config is %d tokens (threshold: 3,000)", tokens)
+		printWarning("Merged config is %d tokens (threshold: %d)", tokens, threshold)
 		fmt.Printf("  Large configs may reduce Claude Code effectiveness.\n")
 		fmt.Printf("  Run %s to compress.\n", info("staghorn optimize"))
 	}
