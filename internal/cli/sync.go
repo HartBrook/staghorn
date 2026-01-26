@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -30,6 +31,53 @@ type syncOptions struct {
 	fetchOnly     bool
 	applyOnly     bool
 	claudeOnly    bool
+}
+
+// shouldSyncConfig returns true if base config should be synced.
+func (o *syncOptions) shouldSyncConfig() bool {
+	return !o.commandsOnly && !o.languagesOnly && !o.rulesOnly && !o.claudeOnly
+}
+
+// shouldSyncCommands returns true if commands should be synced.
+func (o *syncOptions) shouldSyncCommands() bool {
+	return !o.configOnly && !o.languagesOnly && !o.rulesOnly && !o.claudeOnly
+}
+
+// shouldSyncLanguages returns true if languages should be synced.
+func (o *syncOptions) shouldSyncLanguages() bool {
+	return !o.configOnly && !o.commandsOnly && !o.rulesOnly && !o.claudeOnly
+}
+
+// shouldSyncEvals returns true if evals should be synced.
+func (o *syncOptions) shouldSyncEvals() bool {
+	return !o.configOnly && !o.commandsOnly && !o.languagesOnly && !o.rulesOnly && !o.claudeOnly
+}
+
+// shouldSyncRules returns true if rules should be synced.
+func (o *syncOptions) shouldSyncRules() bool {
+	return !o.configOnly && !o.commandsOnly && !o.languagesOnly && !o.claudeOnly
+}
+
+// shouldApplyConfig returns true if config should be applied to ~/.claude/CLAUDE.md.
+func (o *syncOptions) shouldApplyConfig() bool {
+	return !o.fetchOnly && !o.rulesOnly && !o.claudeOnly
+}
+
+// shouldSyncClaudeCommands returns true if commands should be synced to Claude Code.
+func (o *syncOptions) shouldSyncClaudeCommands() bool {
+	return !o.configOnly && !o.languagesOnly && !o.rulesOnly && !o.fetchOnly
+}
+
+// shouldSyncClaudeRules returns true if rules should be synced to Claude Code.
+func (o *syncOptions) shouldSyncClaudeRules() bool {
+	return !o.configOnly && !o.languagesOnly && !o.commandsOnly && !o.fetchOnly
+}
+
+// repoContext holds the branch info for a single repo.
+type repoContext struct {
+	owner  string
+	repo   string
+	branch string
 }
 
 // NewSyncCmd creates the sync command.
@@ -81,6 +129,10 @@ func runSync(ctx context.Context, opts *syncOptions) error {
 
 	c := cache.New(paths)
 
+	// Check for multi-source configuration
+	// We need the GitHub client for multi-source, so check after client creation
+	isMultiSource := cfg.Source.IsMultiSource()
+
 	// Apply-only mode: skip fetch, just apply from cache
 	if opts.applyOnly {
 		if !c.Exists(owner, repo) {
@@ -127,6 +179,11 @@ func runSync(ctx context.Context, opts *syncOptions) error {
 		}
 	}
 
+	// Use multi-source sync if configured
+	if isMultiSource {
+		return runMultiSourceSync(ctx, cfg, paths, opts, client, c)
+	}
+
 	// Determine branch (use default branch from repo)
 	branch, err := client.GetDefaultBranch(ctx, owner, repo)
 	if err != nil {
@@ -135,8 +192,8 @@ func runSync(ctx context.Context, opts *syncOptions) error {
 
 	fmt.Printf("Fetching %s/%s...\n", owner, repo)
 
-	// Sync config unless --commands-only, --languages-only, --rules-only, or --claude-only was specified
-	if !opts.commandsOnly && !opts.languagesOnly && !opts.rulesOnly && !opts.claudeOnly {
+	// Sync config
+	if opts.shouldSyncConfig() {
 		result, err := client.FetchFile(ctx, owner, repo, config.DefaultPath, branch)
 		if err != nil {
 			return errors.GitHubFetchFailed(owner+"/"+repo, err)
@@ -159,8 +216,8 @@ func runSync(ctx context.Context, opts *syncOptions) error {
 		printInfo("SHA", result.SHA[:8])
 	}
 
-	// Sync commands unless --config-only, --languages-only, --rules-only, or --claude-only was specified
-	if !opts.configOnly && !opts.languagesOnly && !opts.rulesOnly && !opts.claudeOnly {
+	// Sync commands
+	if opts.shouldSyncCommands() {
 		commandCount, err := syncCommands(ctx, client, owner, repo, branch, paths)
 		if err != nil {
 			printWarning("Failed to sync commands: %v", err)
@@ -179,8 +236,8 @@ func runSync(ctx context.Context, opts *syncOptions) error {
 		}
 	}
 
-	// Sync languages unless --config-only, --commands-only, --rules-only, or --claude-only was specified
-	if !opts.configOnly && !opts.commandsOnly && !opts.rulesOnly && !opts.claudeOnly {
+	// Sync languages
+	if opts.shouldSyncLanguages() {
 		languageCount, err := syncLanguages(ctx, client, owner, repo, branch, paths)
 		if err != nil {
 			printWarning("Failed to sync languages: %v", err)
@@ -191,8 +248,8 @@ func runSync(ctx context.Context, opts *syncOptions) error {
 		}
 	}
 
-	// Sync evals unless --config-only, --commands-only, --languages-only, --rules-only, or --claude-only was specified
-	if !opts.configOnly && !opts.commandsOnly && !opts.languagesOnly && !opts.rulesOnly && !opts.claudeOnly {
+	// Sync evals
+	if opts.shouldSyncEvals() {
 		evalCount, err := syncEvals(ctx, client, owner, repo, branch, paths)
 		if err != nil {
 			printWarning("Failed to sync evals: %v", err)
@@ -201,8 +258,8 @@ func runSync(ctx context.Context, opts *syncOptions) error {
 		}
 	}
 
-	// Sync rules unless --config-only, --commands-only, --languages-only, or --claude-only was specified
-	if !opts.configOnly && !opts.commandsOnly && !opts.languagesOnly && !opts.claudeOnly {
+	// Sync rules
+	if opts.shouldSyncRules() {
 		ruleCount, err := syncRules(ctx, client, owner, repo, branch, paths)
 		if err != nil {
 			printWarning("Failed to sync rules: %v", err)
@@ -213,16 +270,16 @@ func runSync(ctx context.Context, opts *syncOptions) error {
 		}
 	}
 
-	// Apply to ~/.claude/CLAUDE.md unless --fetch-only, --rules-only, or --claude-only was specified
-	if !opts.fetchOnly && !opts.rulesOnly && !opts.claudeOnly {
+	// Apply to ~/.claude/CLAUDE.md
+	if opts.shouldApplyConfig() {
 		fmt.Println()
 		if err := applyConfig(cfg, paths, owner, repo); err != nil {
 			return err
 		}
 	}
 
-	// Sync commands to Claude Code (always runs unless --fetch-only, --config-only, --languages-only, or --rules-only)
-	if !opts.configOnly && !opts.languagesOnly && !opts.rulesOnly && !opts.fetchOnly {
+	// Sync commands to Claude Code
+	if opts.shouldSyncClaudeCommands() {
 		claudeCount, err := syncClaudeCommands(paths, owner, repo)
 		if err != nil {
 			printWarning("Failed to sync Claude commands: %v", err)
@@ -232,8 +289,8 @@ func runSync(ctx context.Context, opts *syncOptions) error {
 		}
 	}
 
-	// Sync rules to Claude Code (always runs unless --fetch-only, --config-only, --languages-only, or --commands-only)
-	if !opts.configOnly && !opts.languagesOnly && !opts.commandsOnly && !opts.fetchOnly {
+	// Sync rules to Claude Code
+	if opts.shouldSyncClaudeRules() {
 		claudeRuleCount, err := syncClaudeRules(paths, owner, repo)
 		if err != nil {
 			printWarning("Failed to sync Claude rules: %v", err)
@@ -606,6 +663,200 @@ func syncClaudeCommands(paths *config.Paths, owner, repo string) (int, error) {
 	return count, nil
 }
 
+// readPersonalConfig reads and processes the personal config file.
+func readPersonalConfig(paths *config.Paths) ([]byte, error) {
+	if _, err := os.Stat(paths.PersonalMD); err != nil {
+		return nil, nil // No personal config is not an error
+	}
+	personalConfig, err := os.ReadFile(paths.PersonalMD)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read personal config: %w", err)
+	}
+	return []byte(stripInstructionalComments(string(personalConfig))), nil
+}
+
+// resolveActiveLanguages determines which languages are active based on config and available files.
+// It returns a sorted list to ensure deterministic output.
+func resolveActiveLanguages(cfg *config.Config, teamLangDirs []string, personalLangDir string) []string {
+	var activeLanguages []string
+
+	if len(cfg.Languages.Enabled) > 0 {
+		// Explicit list takes precedence
+		activeLanguages = language.FilterDisabled(cfg.Languages.Enabled, cfg.Languages.Disabled)
+	} else {
+		// Collect available languages from all team directories and personal
+		availableLanguages := make(map[string]bool)
+		for _, teamLangDir := range teamLangDirs {
+			if teamLangDir == "" {
+				continue
+			}
+			langs, _ := language.ListAvailableLanguages(teamLangDir, "", "")
+			for _, lang := range langs {
+				availableLanguages[lang] = true
+			}
+		}
+		// Also check personal languages
+		personalLangs, _ := language.ListAvailableLanguages("", personalLangDir, "")
+		for _, lang := range personalLangs {
+			availableLanguages[lang] = true
+		}
+		for lang := range availableLanguages {
+			activeLanguages = append(activeLanguages, lang)
+		}
+		activeLanguages = language.FilterDisabled(activeLanguages, cfg.Languages.Disabled)
+	}
+
+	// Sort for deterministic output
+	sort.Strings(activeLanguages)
+	return activeLanguages
+}
+
+// handleExistingConfigMigration checks if the output file needs migration or backup.
+// Returns (shouldContinue, updatedPersonalConfig, error).
+func handleExistingConfigMigration(cfg *config.Config, paths *config.Paths, outputPath string, personalConfig []byte) (bool, []byte, error) {
+	existingContent, err := os.ReadFile(outputPath)
+	if err != nil {
+		// File doesn't exist - no migration needed
+		return true, personalConfig, nil
+	}
+
+	existingStr := string(existingContent)
+	needsPrompt := false
+	promptReason := ""
+
+	if !strings.Contains(existingStr, merge.HeaderManagedPrefix) {
+		needsPrompt = true
+		promptReason = "Found existing ~/.claude/CLAUDE.md not managed by staghorn"
+	} else {
+		// Check if switching sources
+		currentSource := cfg.SourceRepo()
+		if idx := strings.Index(existingStr, "Source: "); idx != -1 {
+			end := strings.Index(existingStr[idx:], " |")
+			if end != -1 {
+				previousSource := existingStr[idx+8 : idx+end]
+				if previousSource != currentSource {
+					needsPrompt = true
+					promptReason = fmt.Sprintf("Switching source from %s to %s", previousSource, currentSource)
+				}
+			}
+		}
+	}
+
+	if !needsPrompt {
+		return true, personalConfig, nil
+	}
+
+	printWarning("%s", promptReason)
+	fmt.Println()
+	fmt.Println("Options:")
+	fmt.Println("  1. Migrate content to personal config (recommended)")
+	fmt.Println("  2. Back up existing file and continue")
+	fmt.Println("  3. Abort")
+	fmt.Println()
+
+	choice := promptString("Choose an option [1/2/3]:")
+
+	switch choice {
+	case "1", "":
+		contentToMigrate := existingStr
+		if strings.Contains(existingStr, merge.HeaderManagedPrefix) {
+			if idx := strings.Index(existingStr, "-->\n"); idx != -1 {
+				contentToMigrate = strings.TrimLeft(existingStr[idx+4:], "\n")
+			}
+		}
+
+		existingPersonal, _ := os.ReadFile(paths.PersonalMD)
+		newPersonal := string(existingPersonal)
+		if len(newPersonal) > 0 {
+			newPersonal += "\n\n"
+		}
+		newPersonal += "<!-- [staghorn] Migrated from ~/.claude/CLAUDE.md -->\n\n" + contentToMigrate
+
+		if err := os.MkdirAll(paths.ConfigDir, 0755); err != nil {
+			return false, nil, fmt.Errorf("failed to create config directory: %w", err)
+		}
+		if err := os.WriteFile(paths.PersonalMD, []byte(newPersonal), 0644); err != nil {
+			return false, nil, fmt.Errorf("failed to write personal config: %w", err)
+		}
+		printSuccess("Migrated content to %s", paths.PersonalMD)
+		fmt.Printf("  %s Run 'staghorn edit' to review and organize\n", dim("Tip:"))
+		fmt.Println()
+
+		// Re-read personal config
+		updatedPersonal, _ := os.ReadFile(paths.PersonalMD)
+		return true, updatedPersonal, nil
+
+	case "2":
+		backupPath := outputPath + ".backup"
+		if err := os.WriteFile(backupPath, existingContent, 0644); err != nil {
+			return false, nil, fmt.Errorf("failed to backup existing file: %w", err)
+		}
+		printSuccess("Backed up to %s", backupPath)
+		fmt.Println()
+		return true, personalConfig, nil
+
+	case "3":
+		fmt.Println("Aborted.")
+		return false, nil, nil
+
+	default:
+		return false, nil, fmt.Errorf("invalid option")
+	}
+}
+
+// writeConfigOutput writes the merged config to the output file and prints status.
+func writeConfigOutput(outputPath string, output string, hasPersonal bool) error {
+	claudeDir := filepath.Dir(outputPath)
+	if err := os.MkdirAll(claudeDir, 0755); err != nil {
+		return fmt.Errorf("failed to create ~/.claude directory: %w", err)
+	}
+
+	if err := os.WriteFile(outputPath, []byte(output), 0644); err != nil {
+		return fmt.Errorf("failed to write config: %w", err)
+	}
+
+	printSuccess("Applied to %s", outputPath)
+
+	if hasPersonal {
+		fmt.Printf("  %s Team config + personal additions\n", dim("Merged:"))
+	} else {
+		fmt.Printf("  %s Team config only (no personal additions)\n", dim("Merged:"))
+		fmt.Printf("  %s Run 'staghorn edit' to add personal preferences\n", dim("Tip:"))
+	}
+
+	return nil
+}
+
+// mergeAndWriteConfig handles migration, merging, and writing for both single and multi-source configs.
+func mergeAndWriteConfig(cfg *config.Config, paths *config.Paths, teamConfig, personalConfig []byte, activeLanguages []string, languageFiles map[string][]*language.LanguageFile) error {
+	layers := []merge.Layer{
+		{Content: string(teamConfig), Source: "team"},
+		{Content: string(personalConfig), Source: "personal"},
+	}
+	mergeOpts := merge.MergeOptions{
+		AnnotateSources: true,
+		SourceRepo:      cfg.SourceRepo(),
+		Languages:       activeLanguages,
+		LanguageFiles:   languageFiles,
+	}
+
+	outputPath := filepath.Join(os.Getenv("HOME"), ".claude", "CLAUDE.md")
+	shouldContinue, updatedPersonal, err := handleExistingConfigMigration(cfg, paths, outputPath, personalConfig)
+	if err != nil {
+		return err
+	}
+	if !shouldContinue {
+		return nil
+	}
+	if updatedPersonal != nil {
+		personalConfig = updatedPersonal
+		layers[1] = merge.Layer{Content: string(personalConfig), Source: "personal"}
+	}
+
+	output := merge.MergeWithLanguages(layers, mergeOpts)
+	return writeConfigOutput(outputPath, output, len(personalConfig) > 0)
+}
+
 // applyConfig merges team config with personal additions and writes to ~/.claude/CLAUDE.md.
 func applyConfig(cfg *config.Config, paths *config.Paths, owner, repo string) error {
 	// Get team config from cache
@@ -618,171 +869,26 @@ func applyConfig(cfg *config.Config, paths *config.Paths, owner, repo string) er
 	}
 
 	// Get personal config (optional)
-	var personalConfig []byte
-	if _, err := os.Stat(paths.PersonalMD); err == nil {
-		personalConfig, err = os.ReadFile(paths.PersonalMD)
-		if err != nil {
-			return fmt.Errorf("failed to read personal config: %w", err)
-		}
-		// Strip instructional comments from personal config
-		personalConfig = []byte(stripInstructionalComments(string(personalConfig)))
+	personalConfig, err := readPersonalConfig(paths)
+	if err != nil {
+		return err
 	}
 
-	// Resolve languages for global config
-	// For global ~/.claude/CLAUDE.md, include ALL available language configs from team + personal
-	// (auto-detect only makes sense for project-level configs)
+	// Resolve languages
 	teamLangDir := paths.TeamLanguagesDir(owner, repo)
-	personalLangDir := paths.PersonalLanguages
+	activeLanguages := resolveActiveLanguages(cfg, []string{teamLangDir}, paths.PersonalLanguages)
 
-	var activeLanguages []string
 	var languageFiles map[string][]*language.LanguageFile
-
-	if len(cfg.Languages.Enabled) > 0 {
-		// Explicit list takes precedence
-		activeLanguages = language.FilterDisabled(cfg.Languages.Enabled, cfg.Languages.Disabled)
-	} else {
-		// Default: include all available languages from team + personal
-		activeLanguages, _ = language.ListAvailableLanguages(teamLangDir, personalLangDir, "")
-		activeLanguages = language.FilterDisabled(activeLanguages, cfg.Languages.Disabled)
-	}
-
 	if len(activeLanguages) > 0 {
 		languageFiles, _ = language.LoadLanguageFiles(
 			activeLanguages,
 			teamLangDir,
-			personalLangDir,
-			"", // No project dir for global config
+			paths.PersonalLanguages,
+			"",
 		)
 	}
 
-	// Merge configs with language support
-	layers := []merge.Layer{
-		{Content: string(teamConfig), Source: "team"},
-		{Content: string(personalConfig), Source: "personal"},
-	}
-	mergeOpts := merge.MergeOptions{
-		AnnotateSources: true,
-		SourceRepo:      cfg.SourceRepo(),
-		Languages:       activeLanguages,
-		LanguageFiles:   languageFiles,
-	}
-	merged := merge.MergeWithLanguages(layers, mergeOpts)
-	output := merged
-
-	// Ensure ~/.claude directory exists
-	claudeDir := filepath.Join(os.Getenv("HOME"), ".claude")
-	if err := os.MkdirAll(claudeDir, 0755); err != nil {
-		return fmt.Errorf("failed to create ~/.claude directory: %w", err)
-	}
-
-	// Check for existing content that needs backup/migration
-	outputPath := filepath.Join(claudeDir, "CLAUDE.md")
-	if existingContent, err := os.ReadFile(outputPath); err == nil {
-		existingStr := string(existingContent)
-		needsPrompt := false
-		promptReason := ""
-
-		if !strings.Contains(existingStr, merge.HeaderManagedPrefix) {
-			// File exists but isn't managed by staghorn
-			needsPrompt = true
-			promptReason = "Found existing ~/.claude/CLAUDE.md not managed by staghorn"
-		} else {
-			// File is managed by staghorn - check if switching sources
-			currentSource := cfg.SourceRepo()
-			// Extract previous source from header: "<!-- Managed by staghorn | Source: owner/repo |"
-			if idx := strings.Index(existingStr, "Source: "); idx != -1 {
-				end := strings.Index(existingStr[idx:], " |")
-				if end != -1 {
-					previousSource := existingStr[idx+8 : idx+end]
-					if previousSource != currentSource {
-						needsPrompt = true
-						promptReason = fmt.Sprintf("Switching source from %s to %s", previousSource, currentSource)
-					}
-				}
-			}
-		}
-
-		if needsPrompt {
-			printWarning("%s", promptReason)
-			fmt.Println()
-			fmt.Println("Options:")
-			fmt.Println("  1. Migrate content to personal config (recommended)")
-			fmt.Println("  2. Back up existing file and continue")
-			fmt.Println("  3. Abort")
-			fmt.Println()
-
-			choice := promptString("Choose an option [1/2/3]:")
-
-			switch choice {
-			case "1", "":
-				// Migrate to personal config - strip the staghorn header first if present
-				contentToMigrate := existingStr
-				if strings.Contains(existingStr, merge.HeaderManagedPrefix) {
-					// Find end of header line and skip it
-					if idx := strings.Index(existingStr, "-->\n"); idx != -1 {
-						contentToMigrate = strings.TrimLeft(existingStr[idx+4:], "\n")
-					}
-				}
-
-				existingPersonal, _ := os.ReadFile(paths.PersonalMD)
-				newPersonal := string(existingPersonal)
-				if len(newPersonal) > 0 {
-					newPersonal += "\n\n"
-				}
-				newPersonal += "<!-- [staghorn] Migrated from ~/.claude/CLAUDE.md -->\n\n" + contentToMigrate
-
-				if err := os.MkdirAll(paths.ConfigDir, 0755); err != nil {
-					return fmt.Errorf("failed to create config directory: %w", err)
-				}
-				if err := os.WriteFile(paths.PersonalMD, []byte(newPersonal), 0644); err != nil {
-					return fmt.Errorf("failed to write personal config: %w", err)
-				}
-				printSuccess("Migrated content to %s", paths.PersonalMD)
-				fmt.Printf("  %s Run 'staghorn edit' to review and organize\n", dim("Tip:"))
-				fmt.Println()
-
-				// Re-read personal config for merge
-				personalConfig, _ = os.ReadFile(paths.PersonalMD)
-				layers[1] = merge.Layer{Content: string(personalConfig), Source: "personal"}
-				merged = merge.MergeWithLanguages(layers, mergeOpts)
-				output = merged
-
-			case "2":
-				// Back up and continue
-				backupPath := outputPath + ".backup"
-				if err := os.WriteFile(backupPath, existingContent, 0644); err != nil {
-					return fmt.Errorf("failed to backup existing file: %w", err)
-				}
-				printSuccess("Backed up to %s", backupPath)
-				fmt.Println()
-
-			case "3":
-				fmt.Println("Aborted.")
-				return nil
-
-			default:
-				return fmt.Errorf("invalid option")
-			}
-		}
-	}
-
-	// Write to ~/.claude/CLAUDE.md
-	if err := os.WriteFile(outputPath, []byte(output), 0644); err != nil {
-		return fmt.Errorf("failed to write config: %w", err)
-	}
-
-	printSuccess("Applied to %s", outputPath)
-
-	// Show what was merged
-	hasPersonal := len(personalConfig) > 0
-	if hasPersonal {
-		fmt.Printf("  %s Team config + personal additions\n", dim("Merged:"))
-	} else {
-		fmt.Printf("  %s Team config only (no personal additions)\n", dim("Merged:"))
-		fmt.Printf("  %s Run 'staghorn edit' to add personal preferences\n", dim("Tip:"))
-	}
-
-	return nil
+	return mergeAndWriteConfig(cfg, paths, teamConfig, personalConfig, activeLanguages, languageFiles)
 }
 
 // stripInstructionalComments removes HTML comments marked with [staghorn] prefix
@@ -882,4 +988,402 @@ func checkConfigSizeAndSuggestOptimize(cfg *config.Config, paths *config.Paths, 
 		fmt.Printf("  Large configs may reduce Claude Code effectiveness.\n")
 		fmt.Printf("  Run %s to compress.\n", info("staghorn optimize"))
 	}
+}
+
+// buildRepoContexts creates repo contexts for all repos in a multi-source config.
+func buildRepoContexts(ctx context.Context, client *github.Client, cfg *config.Config) (map[string]*repoContext, error) {
+	allRepos := cfg.Source.AllRepos()
+	contexts := make(map[string]*repoContext, len(allRepos))
+
+	for _, repoStr := range allRepos {
+		owner, repo, err := config.ParseRepo(repoStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid repo %s: %w", repoStr, err)
+		}
+
+		branch, err := client.GetDefaultBranch(ctx, owner, repo)
+		if err != nil {
+			return nil, errors.GitHubFetchFailed(repoStr, err)
+		}
+
+		contexts[repoStr] = &repoContext{
+			owner:  owner,
+			repo:   repo,
+			branch: branch,
+		}
+	}
+
+	return contexts, nil
+}
+
+// runMultiSourceSync handles sync when multiple source repos are configured.
+func runMultiSourceSync(ctx context.Context, cfg *config.Config, paths *config.Paths, opts *syncOptions, client *github.Client, c *cache.Cache) error {
+	// Build contexts for all repos
+	repoContexts, err := buildRepoContexts(ctx, client, cfg)
+	if err != nil {
+		return err
+	}
+
+	// Get the base and default repo contexts - these should always exist after buildRepoContexts
+	baseRepoStr := cfg.Source.RepoForBase()
+	baseCtx := repoContexts[baseRepoStr]
+	if baseCtx == nil {
+		// This indicates a bug in buildRepoContexts - it should have created this context
+		return fmt.Errorf("internal error: no context for base repo %s after building contexts", baseRepoStr)
+	}
+
+	defaultRepoStr := cfg.Source.DefaultRepo()
+	defaultCtx := repoContexts[defaultRepoStr]
+	if defaultCtx == nil {
+		// This indicates a bug in buildRepoContexts - it should have created this context
+		return fmt.Errorf("internal error: no context for default repo %s after building contexts", defaultRepoStr)
+	}
+
+	fmt.Printf("Fetching from %d source(s)...\n", len(repoContexts))
+
+	// Sync base config
+	if opts.shouldSyncConfig() {
+		fmt.Printf("  Base config from %s/%s\n", baseCtx.owner, baseCtx.repo)
+		result, err := client.FetchFile(ctx, baseCtx.owner, baseCtx.repo, config.DefaultPath, baseCtx.branch)
+		if err != nil {
+			return errors.GitHubFetchFailed(baseRepoStr, err)
+		}
+
+		meta := &cache.Metadata{
+			Owner:       baseCtx.owner,
+			Repo:        baseCtx.repo,
+			SHA:         result.SHA,
+			LastFetched: time.Now(),
+		}
+
+		if err := c.Write(baseCtx.owner, baseCtx.repo, result.Content, meta); err != nil {
+			return fmt.Errorf("failed to write cache: %w", err)
+		}
+
+		printSuccess("Synced config from %s/%s", baseCtx.owner, baseCtx.repo)
+	}
+
+	// Sync commands with multi-source support
+	if opts.shouldSyncCommands() {
+		commandCount, err := syncCommandsMultiSource(ctx, client, cfg, repoContexts, paths)
+		if err != nil {
+			printWarning("Failed to sync commands: %v", err)
+		} else if commandCount > 0 {
+			printSuccess("Synced %d commands", commandCount)
+		}
+
+		// Sync templates from default repo
+		templateCount, err := syncTemplates(ctx, client, defaultCtx.owner, defaultCtx.repo, defaultCtx.branch, paths)
+		if err != nil {
+			printWarning("Failed to sync templates: %v", err)
+		} else if templateCount > 0 {
+			printSuccess("Synced %d templates", templateCount)
+		}
+	}
+
+	// Sync languages with multi-source support
+	if opts.shouldSyncLanguages() {
+		languageCount, err := syncLanguagesMultiSource(ctx, client, cfg, repoContexts, paths)
+		if err != nil {
+			printWarning("Failed to sync languages: %v", err)
+		} else if languageCount > 0 {
+			printSuccess("Synced %d language configs", languageCount)
+		}
+	}
+
+	// Sync evals from default repo
+	if opts.shouldSyncEvals() {
+		evalCount, err := syncEvals(ctx, client, defaultCtx.owner, defaultCtx.repo, defaultCtx.branch, paths)
+		if err != nil {
+			printWarning("Failed to sync evals: %v", err)
+		} else if evalCount > 0 {
+			printSuccess("Synced %d evals", evalCount)
+		}
+	}
+
+	// Sync rules from default repo (no per-rule multi-source support)
+	if opts.shouldSyncRules() {
+		ruleCount, err := syncRules(ctx, client, defaultCtx.owner, defaultCtx.repo, defaultCtx.branch, paths)
+		if err != nil {
+			printWarning("Failed to sync rules: %v", err)
+		} else if ruleCount > 0 {
+			printSuccess("Synced %d rules", ruleCount)
+		}
+	}
+
+	// Apply config
+	if opts.shouldApplyConfig() {
+		fmt.Println()
+		if err := applyConfigFromMultiSource(cfg, paths, repoContexts); err != nil {
+			return err
+		}
+	}
+
+	// Sync commands to Claude Code
+	if opts.shouldSyncClaudeCommands() {
+		claudeCount, err := syncClaudeCommands(paths, defaultCtx.owner, defaultCtx.repo)
+		if err != nil {
+			printWarning("Failed to sync Claude commands: %v", err)
+		} else if claudeCount > 0 {
+			printSuccess("Synced %d commands to Claude Code", claudeCount)
+		}
+	}
+
+	// Sync rules to Claude Code
+	if opts.shouldSyncClaudeRules() {
+		claudeRuleCount, err := syncClaudeRules(paths, defaultCtx.owner, defaultCtx.repo)
+		if err != nil {
+			printWarning("Failed to sync Claude rules: %v", err)
+		} else if claudeRuleCount > 0 {
+			printSuccess("Synced %d rules to Claude Code", claudeRuleCount)
+		}
+	}
+
+	// Check config size
+	if !opts.fetchOnly {
+		checkConfigSizeAndSuggestOptimize(cfg, paths, defaultCtx.owner, defaultCtx.repo)
+	}
+
+	return nil
+}
+
+// isExplicitlyConfiguredLanguage returns true if the language has an explicit source configured.
+func isExplicitlyConfiguredLanguage(cfg *config.Config, lang string) bool {
+	if cfg.Source.Multi != nil && cfg.Source.Multi.Languages != nil {
+		_, ok := cfg.Source.Multi.Languages[lang]
+		return ok
+	}
+	return false
+}
+
+// isExplicitlyConfiguredCommand returns true if the command has an explicit source configured.
+func isExplicitlyConfiguredCommand(cfg *config.Config, cmd string) bool {
+	if cfg.Source.Multi != nil && cfg.Source.Multi.Commands != nil {
+		_, ok := cfg.Source.Multi.Commands[cmd]
+		return ok
+	}
+	return false
+}
+
+// handleMultiSourceFetchError logs appropriate warnings for fetch errors.
+// For explicitly configured items, always warn. For items using default repo,
+// only warn on non-404 errors (silently skip if not found).
+func handleMultiSourceFetchError(itemType, name, sourceRepo string, err error, isExplicit bool) {
+	if github.IsNotFoundError(err) {
+		if isExplicit {
+			printWarning("%s %s not found in explicitly configured source %s", itemType, name, sourceRepo)
+		}
+		// Silently skip 404s for non-explicit items
+		return
+	}
+	// Always warn on non-404 errors (network issues, auth problems, etc.)
+	printWarning("Failed to fetch %s %s from %s: %v", itemType, name, sourceRepo, err)
+}
+
+// syncLanguagesMultiSource fetches languages from their configured source repos.
+func syncLanguagesMultiSource(ctx context.Context, client *github.Client, cfg *config.Config, repoContexts map[string]*repoContext, paths *config.Paths) (int, error) {
+	// First, discover all languages from the default repo
+	defaultRepoStr := cfg.Source.DefaultRepo()
+	defaultCtx := repoContexts[defaultRepoStr]
+	if defaultCtx == nil {
+		return 0, fmt.Errorf("no context for default repo %s", defaultRepoStr)
+	}
+
+	// Get languages from default repo
+	allLanguages := make(map[string]bool)
+	entries, err := client.ListDirectory(ctx, defaultCtx.owner, defaultCtx.repo, "languages", defaultCtx.branch)
+	if err == nil && entries != nil {
+		for _, entry := range entries {
+			if entry.Type == "file" && strings.HasSuffix(entry.Name, ".md") {
+				lang := strings.TrimSuffix(entry.Name, ".md")
+				allLanguages[lang] = true
+			}
+		}
+	}
+
+	// Add any explicitly configured language sources
+	if cfg.Source.Multi != nil && cfg.Source.Multi.Languages != nil {
+		for lang := range cfg.Source.Multi.Languages {
+			allLanguages[lang] = true
+		}
+	}
+
+	// Sync each language from its configured source
+	count := 0
+	for lang := range allLanguages {
+		sourceRepoStr := cfg.Source.RepoForLanguage(lang)
+		repoCtx := repoContexts[sourceRepoStr]
+		if repoCtx == nil {
+			printWarning("No context for language %s source %s", lang, sourceRepoStr)
+			continue
+		}
+
+		// Fetch this language from its source
+		langPath := fmt.Sprintf("languages/%s.md", lang)
+		result, err := client.FetchFile(ctx, repoCtx.owner, repoCtx.repo, langPath, repoCtx.branch)
+		if err != nil {
+			handleMultiSourceFetchError("language", lang, sourceRepoStr, err, isExplicitlyConfiguredLanguage(cfg, lang))
+			continue
+		}
+
+		// Store in the repo-specific cache directory
+		langDir := paths.TeamLanguagesDir(repoCtx.owner, repoCtx.repo)
+		if err := os.MkdirAll(langDir, 0755); err != nil {
+			printWarning("Failed to create language directory for %s: %v", lang, err)
+			continue
+		}
+
+		localPath := filepath.Join(langDir, lang+".md")
+		if err := os.WriteFile(localPath, []byte(result.Content), 0644); err != nil {
+			printWarning("Failed to write language %s: %v", lang, err)
+			continue
+		}
+
+		count++
+	}
+
+	return count, nil
+}
+
+// syncCommandsMultiSource fetches commands from their configured source repos.
+func syncCommandsMultiSource(ctx context.Context, client *github.Client, cfg *config.Config, repoContexts map[string]*repoContext, paths *config.Paths) (int, error) {
+	// First, discover all commands from the default repo
+	defaultRepoStr := cfg.Source.DefaultRepo()
+	defaultCtx := repoContexts[defaultRepoStr]
+	if defaultCtx == nil {
+		return 0, fmt.Errorf("no context for default repo %s", defaultRepoStr)
+	}
+
+	// Get commands from default repo
+	allCommands := make(map[string]bool)
+	entries, err := client.ListDirectory(ctx, defaultCtx.owner, defaultCtx.repo, "commands", defaultCtx.branch)
+	if err == nil && entries != nil {
+		for _, entry := range entries {
+			if entry.Type == "file" && strings.HasSuffix(entry.Name, ".md") {
+				cmd := strings.TrimSuffix(entry.Name, ".md")
+				allCommands[cmd] = true
+			}
+		}
+	}
+
+	// Add any explicitly configured command sources
+	if cfg.Source.Multi != nil && cfg.Source.Multi.Commands != nil {
+		for cmd := range cfg.Source.Multi.Commands {
+			allCommands[cmd] = true
+		}
+	}
+
+	// Sync each command from its configured source
+	count := 0
+	for cmd := range allCommands {
+		sourceRepoStr := cfg.Source.RepoForCommand(cmd)
+		repoCtx := repoContexts[sourceRepoStr]
+		if repoCtx == nil {
+			printWarning("No context for command %s source %s", cmd, sourceRepoStr)
+			continue
+		}
+
+		// Fetch this command from its source
+		cmdPath := fmt.Sprintf("commands/%s.md", cmd)
+		result, err := client.FetchFile(ctx, repoCtx.owner, repoCtx.repo, cmdPath, repoCtx.branch)
+		if err != nil {
+			handleMultiSourceFetchError("command", cmd, sourceRepoStr, err, isExplicitlyConfiguredCommand(cfg, cmd))
+			continue
+		}
+
+		// Store in the repo-specific cache directory
+		cmdDir := paths.TeamCommandsDir(repoCtx.owner, repoCtx.repo)
+		if err := os.MkdirAll(cmdDir, 0755); err != nil {
+			printWarning("Failed to create commands directory for %s: %v", cmd, err)
+			continue
+		}
+
+		localPath := filepath.Join(cmdDir, cmd+".md")
+		if err := os.WriteFile(localPath, []byte(result.Content), 0644); err != nil {
+			printWarning("Failed to write command %s: %v", cmd, err)
+			continue
+		}
+
+		count++
+	}
+
+	return count, nil
+}
+
+// applyConfigFromMultiSource merges configs from multiple source repos.
+func applyConfigFromMultiSource(cfg *config.Config, paths *config.Paths, repoContexts map[string]*repoContext) error {
+	// Get base config from the base source repo
+	baseRepoStr := cfg.Source.RepoForBase()
+	baseCtx := repoContexts[baseRepoStr]
+	if baseCtx == nil {
+		// This should not happen if buildRepoContexts was called correctly
+		return fmt.Errorf("internal error: no context for base repo %s", baseRepoStr)
+	}
+
+	teamConfig, err := os.ReadFile(paths.CacheFile(baseCtx.owner, baseCtx.repo))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("no cached team config found for %s/%s", baseCtx.owner, baseCtx.repo)
+		}
+		return fmt.Errorf("failed to read cached config: %w", err)
+	}
+
+	// Get personal config (optional)
+	personalConfig, err := readPersonalConfig(paths)
+	if err != nil {
+		return err
+	}
+
+	// Collect all team language directories from all repos (sorted for deterministic output)
+	var repoKeys []string
+	for k := range repoContexts {
+		repoKeys = append(repoKeys, k)
+	}
+	sort.Strings(repoKeys)
+	var teamLangDirs []string
+	for _, k := range repoKeys {
+		ctx := repoContexts[k]
+		teamLangDirs = append(teamLangDirs, paths.TeamLanguagesDir(ctx.owner, ctx.repo))
+	}
+
+	// Resolve active languages (sorted for deterministic output)
+	activeLanguages := resolveActiveLanguages(cfg, teamLangDirs, paths.PersonalLanguages)
+
+	// Load language files from their respective source repos
+	languageFiles := loadMultiSourceLanguageFiles(cfg, paths, repoContexts, activeLanguages)
+
+	return mergeAndWriteConfig(cfg, paths, teamConfig, personalConfig, activeLanguages, languageFiles)
+}
+
+// loadMultiSourceLanguageFiles loads language files from their respective source repos.
+func loadMultiSourceLanguageFiles(cfg *config.Config, paths *config.Paths, repoContexts map[string]*repoContext, activeLanguages []string) map[string][]*language.LanguageFile {
+	if len(activeLanguages) == 0 {
+		return nil
+	}
+
+	languageFiles := make(map[string][]*language.LanguageFile)
+	for _, lang := range activeLanguages {
+		// Determine the source repo for this language
+		sourceRepoStr := cfg.Source.RepoForLanguage(lang)
+		repoCtx := repoContexts[sourceRepoStr]
+		var teamLangDir string
+		if repoCtx != nil {
+			teamLangDir = paths.TeamLanguagesDir(repoCtx.owner, repoCtx.repo)
+		}
+
+		files, err := language.LoadLanguageFiles(
+			[]string{lang},
+			teamLangDir,
+			paths.PersonalLanguages,
+			"",
+		)
+		if err != nil {
+			printWarning("Failed to load language files for %s: %v", lang, err)
+			continue
+		}
+		if langFiles, ok := files[lang]; ok {
+			languageFiles[lang] = langFiles
+		}
+	}
+	return languageFiles
 }

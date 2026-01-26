@@ -1,0 +1,71 @@
+name: "multi_source_languages"
+description: "Multiple languages from different repositories"
+
+setup:
+  multi_source:
+    - source: "acme/standards"
+      claude_md: |
+        ## Code Standards
+
+        Team code standards.
+      languages:
+        go: |
+          ## Go Guidelines
+
+          Use gofmt and go vet.
+        rust: |
+          ## Rust Guidelines
+
+          Use cargo fmt.
+
+    - source: "community/python-standards"
+      languages:
+        python: |
+          ## Python Guidelines
+
+          Use type hints and ruff.
+
+    - source: "frontend/typescript-config"
+      languages:
+        typescript: |
+          ## TypeScript Guidelines
+
+          Enable strict mode.
+
+  config:
+    version: 1
+    source:
+      default: "acme/standards"
+      languages:
+        python: "community/python-standards"
+        typescript: "frontend/typescript-config"
+    languages:
+      enabled: ["python", "go", "rust", "typescript"]
+
+assertions:
+  output_exists: true
+  header:
+    managed_by: true
+  contains:
+    - "Team code standards"
+    - "Use type hints and ruff"
+    - "Use gofmt and go vet"
+    - "Use cargo fmt"
+    - "Enable strict mode"
+  languages:
+    - name: "python"
+      has_team_content: true
+      contains:
+        - "Use type hints and ruff"
+    - name: "go"
+      has_team_content: true
+      contains:
+        - "Use gofmt"
+    - name: "rust"
+      has_team_content: true
+      contains:
+        - "Use cargo fmt"
+    - name: "typescript"
+      has_team_content: true
+      contains:
+        - "Enable strict mode"

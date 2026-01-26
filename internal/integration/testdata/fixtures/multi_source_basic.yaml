@@ -1,0 +1,49 @@
+name: "multi_source_basic"
+description: "Basic multi-source configuration with python from different repo"
+
+setup:
+  multi_source:
+    - source: "acme/standards"
+      claude_md: |
+        ## Core Principles
+
+        Base principles from default repo.
+      languages:
+        go: |
+          ## Go Guidelines
+
+          Use gofmt from default repo.
+
+    - source: "community/python-standards"
+      languages:
+        python: |
+          ## Python Guidelines
+
+          Use type hints from community repo.
+
+  config:
+    version: 1
+    source:
+      default: "acme/standards"
+      languages:
+        python: "community/python-standards"
+    languages:
+      enabled: ["python", "go"]
+
+assertions:
+  output_exists: true
+  header:
+    managed_by: true
+  contains:
+    - "Base principles from default repo"
+    - "Use type hints from community repo"
+    - "Use gofmt from default repo"
+  languages:
+    - name: "python"
+      has_team_content: true
+      contains:
+        - "Use type hints from community repo"
+    - name: "go"
+      has_team_content: true
+      contains:
+        - "Use gofmt from default repo"

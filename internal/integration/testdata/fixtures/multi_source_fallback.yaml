@@ -1,0 +1,59 @@
+name: "multi_source_fallback"
+description: "Unconfigured languages fall back to default repository"
+
+setup:
+  multi_source:
+    - source: "acme/standards"
+      claude_md: |
+        ## Base Config
+
+        Default repository content.
+      languages:
+        go: |
+          ## Go Guidelines
+
+          Go from default (fallback).
+        rust: |
+          ## Rust Guidelines
+
+          Rust from default (fallback).
+
+    - source: "community/python-standards"
+      languages:
+        python: |
+          ## Python Guidelines
+
+          Python from explicit source.
+
+  config:
+    version: 1
+    source:
+      default: "acme/standards"
+      languages:
+        python: "community/python-standards"
+        # go and rust NOT specified - should use default
+    languages:
+      enabled: ["python", "go", "rust"]
+
+assertions:
+  output_exists: true
+  header:
+    managed_by: true
+  contains:
+    - "Default repository content"
+    - "Python from explicit source"
+    - "Go from default (fallback)"
+    - "Rust from default (fallback)"
+  languages:
+    - name: "python"
+      has_team_content: true
+      contains:
+        - "Python from explicit source"
+    - name: "go"
+      has_team_content: true
+      contains:
+        - "Go from default (fallback)"
+    - name: "rust"
+      has_team_content: true
+      contains:
+        - "Rust from default (fallback)"

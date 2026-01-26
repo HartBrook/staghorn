@@ -4,6 +4,7 @@ package integration
 import (
 	"os"
 	"path/filepath"
+	"sort"
 	"testing"
 
 	"github.com/HartBrook/staghorn/internal/config"
@@ -72,6 +73,15 @@ func (e *TestEnv) SetupTeamLanguage(owner, repo, lang, content string) error {
 		return err
 	}
 	return os.WriteFile(filepath.Join(langDir, lang+".md"), []byte(content), 0644)
+}
+
+// SetupTeamCommand writes a team command to cache.
+func (e *TestEnv) SetupTeamCommand(owner, repo, cmd, content string) error {
+	cmdDir := e.Paths.TeamCommandsDir(owner, repo)
+	if err := os.MkdirAll(cmdDir, 0755); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(cmdDir, cmd+".md"), []byte(content), 0644)
 }
 
 // SetupPersonalConfig writes personal.md.
@@ -234,6 +244,107 @@ func (e *TestEnv) RunSync(owner, repo string, cfg *config.Config) error {
 		)
 		if err != nil {
 			return err
+		}
+	}
+
+	// Merge configs
+	layers := []merge.Layer{
+		{Content: string(teamConfig), Source: "team"},
+		{Content: string(personalConfig), Source: "personal"},
+	}
+	mergeOpts := merge.MergeOptions{
+		AnnotateSources: true,
+		SourceRepo:      cfg.SourceRepo(),
+		Languages:       activeLanguages,
+		LanguageFiles:   languageFiles,
+	}
+	output := merge.MergeWithLanguages(layers, mergeOpts)
+
+	// Write to output
+	return os.WriteFile(e.GetOutputPath(), []byte(output), 0644)
+}
+
+// RunMultiSourceSync executes the merge for multi-source configurations.
+// It reads the base config from the base repo and languages from their respective repos.
+func (e *TestEnv) RunMultiSourceSync(cfg *config.Config) error {
+	// Get base repo
+	baseRepoStr := cfg.Source.RepoForBase()
+	baseOwner, baseRepo, err := config.ParseRepo(baseRepoStr)
+	if err != nil {
+		return err
+	}
+
+	// Read team config from base repo cache
+	teamConfig, err := os.ReadFile(e.Paths.CacheFile(baseOwner, baseRepo))
+	if err != nil {
+		return err
+	}
+
+	// Read personal config (optional)
+	var personalConfig []byte
+	if _, err := os.Stat(e.Paths.PersonalMD); err == nil {
+		personalConfig, err = os.ReadFile(e.Paths.PersonalMD)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Resolve active languages
+	var activeLanguages []string
+	if len(cfg.Languages.Enabled) > 0 {
+		activeLanguages = language.FilterDisabled(cfg.Languages.Enabled, cfg.Languages.Disabled)
+	} else {
+		// Collect available languages from all source repos
+		availableLanguages := make(map[string]bool)
+		for _, repoStr := range cfg.Source.AllRepos() {
+			owner, repo, err := config.ParseRepo(repoStr)
+			if err != nil {
+				continue
+			}
+			teamLangDir := e.Paths.TeamLanguagesDir(owner, repo)
+			langs, _ := language.ListAvailableLanguages(teamLangDir, "", "")
+			for _, lang := range langs {
+				availableLanguages[lang] = true
+			}
+		}
+		// Also check personal languages
+		personalLangs, _ := language.ListAvailableLanguages("", e.Paths.PersonalLanguages, "")
+		for _, lang := range personalLangs {
+			availableLanguages[lang] = true
+		}
+		for lang := range availableLanguages {
+			activeLanguages = append(activeLanguages, lang)
+		}
+		// Sort for deterministic output
+		sort.Strings(activeLanguages)
+		activeLanguages = language.FilterDisabled(activeLanguages, cfg.Languages.Disabled)
+	}
+
+	// Load language files from their respective source repos
+	var languageFiles map[string][]*language.LanguageFile
+	if len(activeLanguages) > 0 {
+		languageFiles = make(map[string][]*language.LanguageFile)
+		for _, lang := range activeLanguages {
+			// Determine the source repo for this language
+			sourceRepoStr := cfg.Source.RepoForLanguage(lang)
+			owner, repo, err := config.ParseRepo(sourceRepoStr)
+			if err != nil {
+				continue
+			}
+			teamLangDir := e.Paths.TeamLanguagesDir(owner, repo)
+
+			files, err := language.LoadLanguageFiles(
+				[]string{lang},
+				teamLangDir,
+				e.Paths.PersonalLanguages,
+				"",
+			)
+			if err != nil {
+				continue
+			}
+			if langFiles, ok := files[lang]; ok {
+				languageFiles[lang] = langFiles
+			}
 		}
 	}
 
