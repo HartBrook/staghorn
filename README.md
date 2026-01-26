@@ -497,17 +497,16 @@ Language configs are markdown files in `languages/` directories, layered just li
 2. **Personal** — `~/.config/staghorn/languages/`
 3. **Project** — `.staghorn/languages/`
 
-### Global vs Project
+### What Gets Included
 
-- **Global (`~/.claude/CLAUDE.md`)**: Includes all available language configs
-- **Project (`./CLAUDE.md`)**: Auto-detects languages from marker files (e.g., `go.mod`, `pyproject.toml`)
+By default, `stag sync` includes all language configs that exist in your team, personal, or project `languages/` directories. If your team provides `python.md` and `go.md`, both are included in the merged output.
 
-### Configuration Options
+Use `enabled` or `disabled` to control which languages are included:
 
 ```yaml
 # ~/.config/staghorn/config.yaml
 
-# Only include specific languages globally
+# Only include specific languages
 languages:
   enabled:
     - python
@@ -519,7 +518,9 @@ languages:
     - javascript
 ```
 
-### Supported Languages
+### Language Detection (Informational)
+
+The `stag languages` command detects languages in your project based on marker files. This is useful for seeing what languages are present, but doesn't affect which configs are synced.
 
 | Language   | Marker Files                                                |
 | ---------- | ----------------------------------------------------------- |
@@ -534,11 +535,32 @@ languages:
 | Swift      | `Package.swift`                                             |
 | Kotlin     | `build.gradle.kts`                                          |
 
-> When both TypeScript and JavaScript are detected, TypeScript takes precedence.
+> When both TypeScript and JavaScript are detected, TypeScript takes precedence in the display.
 
 ## Path-Scoped Rules
 
 Rules are guidelines that Claude Code applies only when working with specific file types or directories. Unlike the main `CLAUDE.md` which applies globally, rules use path patterns to scope their applicability.
+
+### Rules vs Languages
+
+Both features provide scoped guidelines, but they solve different problems:
+
+| Feature | Scoping | Best For |
+|---------|---------|----------|
+| **Languages** | Included if config file exists (`languages/python.md`) | Language-specific conventions, tooling, idioms |
+| **Rules** | Path patterns in frontmatter (`src/api/**/*.ts`) | Architectural patterns, domain-specific guidelines |
+
+**Use Languages when** the guidance is tied to a programming language:
+- Python type hints and testing with pytest
+- Go error handling conventions
+- TypeScript strict mode settings
+
+**Use Rules when** the guidance is tied to a location or domain:
+- REST API standards for `src/api/**`
+- Database query patterns for `src/db/**`
+- React component guidelines for `src/components/**`
+
+They work together: a Python API project might use the `python` language config for Python conventions *and* the `api/rest.md` rule for REST patterns.
 
 ### How Rules Work
 
