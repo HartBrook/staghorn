@@ -18,6 +18,7 @@ import (
 	"github.com/HartBrook/staghorn/internal/merge"
 	"github.com/HartBrook/staghorn/internal/optimize"
 	"github.com/HartBrook/staghorn/internal/rules"
+	"github.com/HartBrook/staghorn/internal/skills"
 	"github.com/spf13/cobra"
 )
 
@@ -28,6 +29,7 @@ type syncOptions struct {
 	commandsOnly  bool
 	languagesOnly bool
 	rulesOnly     bool
+	skillsOnly    bool
 	fetchOnly     bool
 	applyOnly     bool
 	claudeOnly    bool
@@ -70,7 +72,17 @@ func (o *syncOptions) shouldSyncClaudeCommands() bool {
 
 // shouldSyncClaudeRules returns true if rules should be synced to Claude Code.
 func (o *syncOptions) shouldSyncClaudeRules() bool {
-	return !o.configOnly && !o.languagesOnly && !o.commandsOnly && !o.fetchOnly
+	return !o.configOnly && !o.languagesOnly && !o.commandsOnly && !o.skillsOnly && !o.fetchOnly
+}
+
+// shouldSyncSkills returns true if skills should be synced.
+func (o *syncOptions) shouldSyncSkills() bool {
+	return !o.configOnly && !o.commandsOnly && !o.languagesOnly && !o.rulesOnly && !o.claudeOnly
+}
+
+// shouldSyncClaudeSkills returns true if skills should be synced to Claude Code.
+func (o *syncOptions) shouldSyncClaudeSkills() bool {
+	return !o.configOnly && !o.languagesOnly && !o.commandsOnly && !o.rulesOnly && !o.fetchOnly
 }
 
 // repoContext holds the branch info for a single repo.
@@ -108,7 +120,8 @@ This is the main command for keeping your Claude Code config up to date.`,
 	cmd.Flags().BoolVar(&opts.commandsOnly, "commands-only", false, "Only sync commands, skip config, languages, and rules")
 	cmd.Flags().BoolVar(&opts.languagesOnly, "languages-only", false, "Only sync languages, skip config, commands, and rules")
 	cmd.Flags().BoolVar(&opts.rulesOnly, "rules-only", false, "Only sync rules, skip config, commands, and languages")
-	cmd.Flags().BoolVar(&opts.claudeOnly, "claude-only", false, "Only sync commands and rules to ~/.claude/, skip config apply")
+	cmd.Flags().BoolVar(&opts.skillsOnly, "skills-only", false, "Only sync skills, skip config, commands, languages, and rules")
+	cmd.Flags().BoolVar(&opts.claudeOnly, "claude-only", false, "Only sync commands, rules, and skills to ~/.claude/, skip config apply")
 
 	return cmd
 }
@@ -270,6 +283,18 @@ func runSync(ctx context.Context, opts *syncOptions) error {
 		}
 	}
 
+	// Sync skills
+	if opts.shouldSyncSkills() {
+		skillCount, err := syncSkills(ctx, client, owner, repo, branch, paths)
+		if err != nil {
+			printWarning("Failed to sync skills: %v", err)
+		} else if skillCount > 0 {
+			printSuccess("Synced %d skills", skillCount)
+		} else if opts.skillsOnly {
+			fmt.Println("No skills found in team repository")
+		}
+	}
+
 	// Apply to ~/.claude/CLAUDE.md
 	if opts.shouldApplyConfig() {
 		fmt.Println()
@@ -299,6 +324,17 @@ func runSync(ctx context.Context, opts *syncOptions) error {
 		}
 	}
 
+	// Sync skills to Claude Code
+	if opts.shouldSyncClaudeSkills() {
+		claudeSkillCount, err := syncClaudeSkills(paths, owner, repo)
+		if err != nil {
+			printWarning("Failed to sync Claude skills: %v", err)
+		} else if claudeSkillCount > 0 {
+			printSuccess("Synced %d skills to Claude Code", claudeSkillCount)
+			fmt.Printf("  %s Skills are available via /skill-name in Claude Code\n", dim("Tip:"))
+		}
+	}
+
 	// Check merged config size and suggest optimization if large
 	if !opts.fetchOnly {
 		checkConfigSizeAndSuggestOptimize(cfg, paths, owner, repo)
@@ -307,176 +343,57 @@ func runSync(ctx context.Context, opts *syncOptions) error {
 	return nil
 }
 
-// syncCommands fetches commands from the team repo's commands/ directory.
-func syncCommands(ctx context.Context, client *github.Client, owner, repo, branch string, paths *config.Paths) (int, error) {
-	// List commands directory
-	entries, err := client.ListDirectory(ctx, owner, repo, "commands", branch)
-	if err != nil {
-		return 0, err
-	}
-
-	if entries == nil {
-		// No commands directory
-		return 0, nil
-	}
-
-	// Create local commands cache directory
-	commandsDir := paths.TeamCommandsDir(owner, repo)
-	if err := os.MkdirAll(commandsDir, 0755); err != nil {
-		return 0, fmt.Errorf("failed to create commands directory: %w", err)
-	}
-
-	// Fetch each .md file
-	count := 0
-	for _, entry := range entries {
-		if entry.Type != "file" || !strings.HasSuffix(entry.Name, ".md") {
-			continue
-		}
-
-		result, err := client.FetchFile(ctx, owner, repo, entry.Path, branch)
-		if err != nil {
-			printWarning("Failed to fetch command %s: %v", entry.Name, err)
-			continue
-		}
-
-		localPath := filepath.Join(commandsDir, entry.Name)
-		if err := os.WriteFile(localPath, []byte(result.Content), 0644); err != nil {
-			printWarning("Failed to write command %s: %v", entry.Name, err)
-			continue
-		}
-
-		count++
-	}
-
-	return count, nil
+// syncDirectoryOpts configures the syncDirectoryContents helper.
+type syncDirectoryOpts struct {
+	remoteDir  string   // Remote directory name (e.g., "commands")
+	localDir   string   // Local directory path to sync to
+	itemType   string   // Human-readable name for warnings (e.g., "command")
+	extensions []string // File extensions to sync (e.g., []string{".md"})
 }
 
-// syncTemplates fetches project templates from the team repo's templates/ directory.
-func syncTemplates(ctx context.Context, client *github.Client, owner, repo, branch string, paths *config.Paths) (int, error) {
-	// List templates directory
-	entries, err := client.ListDirectory(ctx, owner, repo, "templates", branch)
+// syncDirectoryContents fetches files from a remote directory and saves them locally.
+// This is a generic helper used by syncCommands, syncTemplates, syncLanguages, etc.
+func syncDirectoryContents(ctx context.Context, client *github.Client, owner, repo, branch string, opts syncDirectoryOpts) (int, error) {
+	entries, err := client.ListDirectory(ctx, owner, repo, opts.remoteDir, branch)
 	if err != nil {
 		return 0, err
 	}
 
 	if entries == nil {
-		// No templates directory
 		return 0, nil
 	}
 
-	// Create local templates cache directory
-	templatesDir := paths.TeamTemplatesDir(owner, repo)
-	if err := os.MkdirAll(templatesDir, 0755); err != nil {
-		return 0, fmt.Errorf("failed to create templates directory: %w", err)
+	if err := os.MkdirAll(opts.localDir, 0755); err != nil {
+		return 0, fmt.Errorf("failed to create %s directory: %w", opts.itemType, err)
 	}
 
-	// Fetch each .md file
-	count := 0
-	for _, entry := range entries {
-		if entry.Type != "file" || !strings.HasSuffix(entry.Name, ".md") {
-			continue
-		}
-
-		result, err := client.FetchFile(ctx, owner, repo, entry.Path, branch)
-		if err != nil {
-			printWarning("Failed to fetch template %s: %v", entry.Name, err)
-			continue
-		}
-
-		localPath := filepath.Join(templatesDir, entry.Name)
-		if err := os.WriteFile(localPath, []byte(result.Content), 0644); err != nil {
-			printWarning("Failed to write template %s: %v", entry.Name, err)
-			continue
-		}
-
-		count++
-	}
-
-	return count, nil
-}
-
-// syncLanguages fetches language configs from the team repo's languages/ directory.
-func syncLanguages(ctx context.Context, client *github.Client, owner, repo, branch string, paths *config.Paths) (int, error) {
-	// List languages directory
-	entries, err := client.ListDirectory(ctx, owner, repo, "languages", branch)
-	if err != nil {
-		return 0, err
-	}
-
-	if entries == nil {
-		// No languages directory
-		return 0, nil
-	}
-
-	// Create local languages cache directory
-	languagesDir := paths.TeamLanguagesDir(owner, repo)
-	if err := os.MkdirAll(languagesDir, 0755); err != nil {
-		return 0, fmt.Errorf("failed to create languages directory: %w", err)
-	}
-
-	// Fetch each .md file
-	count := 0
-	for _, entry := range entries {
-		if entry.Type != "file" || !strings.HasSuffix(entry.Name, ".md") {
-			continue
-		}
-
-		result, err := client.FetchFile(ctx, owner, repo, entry.Path, branch)
-		if err != nil {
-			printWarning("Failed to fetch language config %s: %v", entry.Name, err)
-			continue
-		}
-
-		localPath := filepath.Join(languagesDir, entry.Name)
-		if err := os.WriteFile(localPath, []byte(result.Content), 0644); err != nil {
-			printWarning("Failed to write language config %s: %v", entry.Name, err)
-			continue
-		}
-
-		count++
-	}
-
-	return count, nil
-}
-
-// syncEvals fetches evals from the team repo's evals/ directory.
-func syncEvals(ctx context.Context, client *github.Client, owner, repo, branch string, paths *config.Paths) (int, error) {
-	// List evals directory
-	entries, err := client.ListDirectory(ctx, owner, repo, "evals", branch)
-	if err != nil {
-		return 0, err
-	}
-
-	if entries == nil {
-		// No evals directory
-		return 0, nil
-	}
-
-	// Create local evals cache directory
-	evalsDir := paths.TeamEvalsDir(owner, repo)
-	if err := os.MkdirAll(evalsDir, 0755); err != nil {
-		return 0, fmt.Errorf("failed to create evals directory: %w", err)
-	}
-
-	// Fetch each .yaml/.yml file
 	count := 0
 	for _, entry := range entries {
 		if entry.Type != "file" {
 			continue
 		}
-		if !strings.HasSuffix(entry.Name, ".yaml") && !strings.HasSuffix(entry.Name, ".yml") {
+
+		// Check if file matches any of the allowed extensions
+		hasValidExt := false
+		for _, ext := range opts.extensions {
+			if strings.HasSuffix(entry.Name, ext) {
+				hasValidExt = true
+				break
+			}
+		}
+		if !hasValidExt {
 			continue
 		}
 
 		result, err := client.FetchFile(ctx, owner, repo, entry.Path, branch)
 		if err != nil {
-			printWarning("Failed to fetch eval %s: %v", entry.Name, err)
+			printWarning("Failed to fetch %s %s: %v", opts.itemType, entry.Name, err)
 			continue
 		}
 
-		localPath := filepath.Join(evalsDir, entry.Name)
+		localPath := filepath.Join(opts.localDir, entry.Name)
 		if err := os.WriteFile(localPath, []byte(result.Content), 0644); err != nil {
-			printWarning("Failed to write eval %s: %v", entry.Name, err)
+			printWarning("Failed to write %s %s: %v", opts.itemType, entry.Name, err)
 			continue
 		}
 
@@ -484,6 +401,46 @@ func syncEvals(ctx context.Context, client *github.Client, owner, repo, branch s
 	}
 
 	return count, nil
+}
+
+// syncCommands fetches commands from the team repo's commands/ directory.
+func syncCommands(ctx context.Context, client *github.Client, owner, repo, branch string, paths *config.Paths) (int, error) {
+	return syncDirectoryContents(ctx, client, owner, repo, branch, syncDirectoryOpts{
+		remoteDir:  "commands",
+		localDir:   paths.TeamCommandsDir(owner, repo),
+		itemType:   "command",
+		extensions: []string{".md"},
+	})
+}
+
+// syncTemplates fetches project templates from the team repo's templates/ directory.
+func syncTemplates(ctx context.Context, client *github.Client, owner, repo, branch string, paths *config.Paths) (int, error) {
+	return syncDirectoryContents(ctx, client, owner, repo, branch, syncDirectoryOpts{
+		remoteDir:  "templates",
+		localDir:   paths.TeamTemplatesDir(owner, repo),
+		itemType:   "template",
+		extensions: []string{".md"},
+	})
+}
+
+// syncLanguages fetches language configs from the team repo's languages/ directory.
+func syncLanguages(ctx context.Context, client *github.Client, owner, repo, branch string, paths *config.Paths) (int, error) {
+	return syncDirectoryContents(ctx, client, owner, repo, branch, syncDirectoryOpts{
+		remoteDir:  "languages",
+		localDir:   paths.TeamLanguagesDir(owner, repo),
+		itemType:   "language config",
+		extensions: []string{".md"},
+	})
+}
+
+// syncEvals fetches evals from the team repo's evals/ directory.
+func syncEvals(ctx context.Context, client *github.Client, owner, repo, branch string, paths *config.Paths) (int, error) {
+	return syncDirectoryContents(ctx, client, owner, repo, branch, syncDirectoryOpts{
+		remoteDir:  "evals",
+		localDir:   paths.TeamEvalsDir(owner, repo),
+		itemType:   "eval",
+		extensions: []string{".yaml", ".yml"},
+	})
 }
 
 // syncRules fetches rules from the team repo's rules/ directory (recursive).
@@ -981,10 +938,16 @@ func checkConfigSizeAndSuggestOptimize(cfg *config.Config, paths *config.Paths, 
 	merged := merge.MergeWithLanguages(layers, mergeOpts)
 	tokens := optimize.CountTokens(merged)
 
+	// Use configured threshold or default
+	threshold := cfg.Optimize.WarnThreshold
+	if threshold == 0 {
+		threshold = 3000 // Default threshold
+	}
+
 	// Warn if over threshold
-	if tokens > 3000 {
+	if tokens > threshold {
 		fmt.Println()
-		printWarning("Merged config is %d tokens (threshold: 3,000)", tokens)
+		printWarning("Merged config is %d tokens (threshold: %d)", tokens, threshold)
 		fmt.Printf("  Large configs may reduce Claude Code effectiveness.\n")
 		fmt.Printf("  Run %s to compress.\n", info("staghorn optimize"))
 	}
@@ -1111,6 +1074,16 @@ func runMultiSourceSync(ctx context.Context, cfg *config.Config, paths *config.P
 		}
 	}
 
+	// Sync skills with multi-source support
+	if opts.shouldSyncSkills() {
+		skillCount, err := syncSkillsMultiSource(ctx, client, cfg, repoContexts, paths)
+		if err != nil {
+			printWarning("Failed to sync skills: %v", err)
+		} else if skillCount > 0 {
+			printSuccess("Synced %d skills", skillCount)
+		}
+	}
+
 	// Apply config
 	if opts.shouldApplyConfig() {
 		fmt.Println()
@@ -1136,6 +1109,17 @@ func runMultiSourceSync(ctx context.Context, cfg *config.Config, paths *config.P
 			printWarning("Failed to sync Claude rules: %v", err)
 		} else if claudeRuleCount > 0 {
 			printSuccess("Synced %d rules to Claude Code", claudeRuleCount)
+		}
+	}
+
+	// Sync skills to Claude Code
+	if opts.shouldSyncClaudeSkills() {
+		claudeSkillCount, err := syncClaudeSkills(paths, defaultCtx.owner, defaultCtx.repo)
+		if err != nil {
+			printWarning("Failed to sync Claude skills: %v", err)
+		} else if claudeSkillCount > 0 {
+			printSuccess("Synced %d skills to Claude Code", claudeSkillCount)
+			fmt.Printf("  %s Skills are available via /skill-name in Claude Code\n", dim("Tip:"))
 		}
 	}
 
@@ -1386,4 +1370,217 @@ func loadMultiSourceLanguageFiles(cfg *config.Config, paths *config.Paths, repoC
 		}
 	}
 	return languageFiles
+}
+
+// syncSkills fetches skills from the team repo's skills/ directory.
+// Skills are directories containing SKILL.md plus optional supporting files.
+func syncSkills(ctx context.Context, client *github.Client, owner, repo, branch string, paths *config.Paths) (int, error) {
+	// List skills directory (top-level entries are skill directories)
+	entries, err := client.ListDirectory(ctx, owner, repo, "skills", branch)
+	if err != nil {
+		return 0, err
+	}
+
+	if entries == nil {
+		return 0, nil
+	}
+
+	// Create local skills cache directory
+	skillsDir := paths.TeamSkillsDir(owner, repo)
+
+	// Clear existing cache to handle deletions
+	if err := os.RemoveAll(skillsDir); err != nil {
+		return 0, fmt.Errorf("failed to clear skills cache: %w", err)
+	}
+
+	// Sync each skill directory
+	count := 0
+	for _, entry := range entries {
+		if entry.Type != "dir" {
+			continue
+		}
+
+		// Sync this skill directory recursively
+		skillLocalDir := filepath.Join(skillsDir, entry.Name)
+		fileCount, err := syncSkillDir(ctx, client, owner, repo, branch, entry.Path, skillLocalDir)
+		if err != nil {
+			printWarning("Failed to sync skill %s: %v", entry.Name, err)
+			continue
+		}
+
+		if fileCount > 0 {
+			count++
+		}
+	}
+
+	return count, nil
+}
+
+// syncSkillDir syncs a single skill directory recursively.
+func syncSkillDir(ctx context.Context, client *github.Client, owner, repo, branch, remotePath, localDir string) (int, error) {
+	entries, err := client.ListDirectory(ctx, owner, repo, remotePath, branch)
+	if err != nil {
+		return 0, err
+	}
+
+	if entries == nil {
+		return 0, nil
+	}
+
+	// Ensure local directory exists
+	if err := os.MkdirAll(localDir, 0755); err != nil {
+		return 0, fmt.Errorf("failed to create skill directory: %w", err)
+	}
+
+	count := 0
+	for _, entry := range entries {
+		if entry.Type == "dir" {
+			// Recurse into subdirectory
+			subLocalDir := filepath.Join(localDir, entry.Name)
+			subCount, err := syncSkillDir(ctx, client, owner, repo, branch, entry.Path, subLocalDir)
+			if err != nil {
+				printWarning("Failed to sync skill subdirectory %s: %v", entry.Name, err)
+				continue
+			}
+			count += subCount
+		} else if entry.Type == "file" {
+			// Fetch and cache file
+			result, err := client.FetchFile(ctx, owner, repo, entry.Path, branch)
+			if err != nil {
+				printWarning("Failed to fetch skill file %s: %v", entry.Name, err)
+				continue
+			}
+
+			localPath := filepath.Join(localDir, entry.Name)
+			if err := os.WriteFile(localPath, []byte(result.Content), 0644); err != nil {
+				printWarning("Failed to write skill file %s: %v", entry.Name, err)
+				continue
+			}
+
+			count++
+		}
+	}
+
+	return count, nil
+}
+
+// syncClaudeSkills syncs staghorn skills to Claude Code skills directory.
+func syncClaudeSkills(paths *config.Paths, owner, repo string) (int, error) {
+	// Load skills from all sources using the registry
+	registry, err := skills.LoadRegistry(
+		paths.TeamSkillsDir(owner, repo),
+		paths.PersonalSkills,
+		"", // No project dir for global sync
+	)
+	if err != nil {
+		return 0, fmt.Errorf("failed to load skills: %w", err)
+	}
+
+	allSkills := registry.All()
+	if len(allSkills) == 0 {
+		return 0, nil
+	}
+
+	// Create Claude skills directory
+	claudeDir := paths.ClaudeSkillsDir()
+	if err := os.MkdirAll(claudeDir, 0755); err != nil {
+		return 0, fmt.Errorf("failed to create Claude skills directory: %w", err)
+	}
+
+	// Sync each skill
+	count := 0
+	for _, skill := range allSkills {
+		filesWritten, err := skills.SyncToClaude(skill, claudeDir)
+		if err != nil {
+			if strings.Contains(err.Error(), "not managed by staghorn") {
+				printWarning("Skipping skill %s: existing skill not managed by staghorn", skill.Name)
+			} else {
+				printWarning("Failed to sync skill %s: %v", skill.Name, err)
+			}
+			continue
+		}
+		if filesWritten > 0 {
+			count++
+		}
+	}
+
+	return count, nil
+}
+
+// isExplicitlyConfiguredSkill returns true if the skill has an explicit source configured.
+func isExplicitlyConfiguredSkill(cfg *config.Config, skill string) bool {
+	if cfg.Source.Multi != nil && cfg.Source.Multi.Skills != nil {
+		_, ok := cfg.Source.Multi.Skills[skill]
+		return ok
+	}
+	return false
+}
+
+// syncSkillsMultiSource fetches skills from their configured source repos.
+func syncSkillsMultiSource(ctx context.Context, client *github.Client, cfg *config.Config, repoContexts map[string]*repoContext, paths *config.Paths) (int, error) {
+	// First, discover all skills from the default repo
+	defaultRepoStr := cfg.Source.DefaultRepo()
+	defaultCtx := repoContexts[defaultRepoStr]
+	if defaultCtx == nil {
+		return 0, fmt.Errorf("no context for default repo %s", defaultRepoStr)
+	}
+
+	// Get skills from default repo
+	allSkills := make(map[string]bool)
+	entries, err := client.ListDirectory(ctx, defaultCtx.owner, defaultCtx.repo, "skills", defaultCtx.branch)
+	if err == nil && entries != nil {
+		for _, entry := range entries {
+			if entry.Type == "dir" {
+				allSkills[entry.Name] = true
+			}
+		}
+	}
+
+	// Add any explicitly configured skill sources
+	if cfg.Source.Multi != nil && cfg.Source.Multi.Skills != nil {
+		for skill := range cfg.Source.Multi.Skills {
+			allSkills[skill] = true
+		}
+	}
+
+	// Sync each skill from its configured source
+	count := 0
+	for skill := range allSkills {
+		sourceRepoStr := cfg.Source.RepoForSkill(skill)
+		repoCtx := repoContexts[sourceRepoStr]
+		if repoCtx == nil {
+			printWarning("No context for skill %s source %s", skill, sourceRepoStr)
+			continue
+		}
+
+		// Sync this skill from its source
+		skillPath := fmt.Sprintf("skills/%s", skill)
+		skillLocalDir := filepath.Join(paths.TeamSkillsDir(repoCtx.owner, repoCtx.repo), skill)
+
+		// Check if skill exists in remote
+		entries, err := client.ListDirectory(ctx, repoCtx.owner, repoCtx.repo, skillPath, repoCtx.branch)
+		if err != nil {
+			handleMultiSourceFetchError("skill", skill, sourceRepoStr, err, isExplicitlyConfiguredSkill(cfg, skill))
+			continue
+		}
+		if entries == nil {
+			if isExplicitlyConfiguredSkill(cfg, skill) {
+				printWarning("Skill %s not found in explicitly configured source %s", skill, sourceRepoStr)
+			}
+			continue
+		}
+
+		// Sync the skill directory
+		fileCount, err := syncSkillDir(ctx, client, repoCtx.owner, repoCtx.repo, repoCtx.branch, skillPath, skillLocalDir)
+		if err != nil {
+			printWarning("Failed to sync skill %s from %s: %v", skill, sourceRepoStr, err)
+			continue
+		}
+
+		if fileCount > 0 {
+			count++
+		}
+	}
+
+	return count, nil
 }

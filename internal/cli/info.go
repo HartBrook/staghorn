@@ -8,11 +8,13 @@ import (
 	"strings"
 
 	"github.com/HartBrook/staghorn/internal/cache"
+	"github.com/HartBrook/staghorn/internal/commands"
 	"github.com/HartBrook/staghorn/internal/config"
 	"github.com/HartBrook/staghorn/internal/github"
 	"github.com/HartBrook/staghorn/internal/language"
 	"github.com/HartBrook/staghorn/internal/merge"
 	"github.com/HartBrook/staghorn/internal/optimize"
+	"github.com/HartBrook/staghorn/internal/skills"
 	"github.com/spf13/cobra"
 )
 
@@ -271,6 +273,42 @@ func showCompactStatus(cfg *config.Config, paths *config.Paths, owner, repo stri
 		langStatus = strings.Join(activeLanguages, ", ")
 	}
 
+	// Commands count
+	cmdRegistry, _ := loadCommandRegistryForInfo(paths, owner, repo, projectRoot)
+	cmdStatus := dim("none")
+	if cmdRegistry != nil && cmdRegistry.Count() > 0 {
+		counts := cmdRegistry.CountBySource()
+		var parts []string
+		if counts[commands.SourceTeam] > 0 {
+			parts = append(parts, fmt.Sprintf("%d team", counts[commands.SourceTeam]))
+		}
+		if counts[commands.SourcePersonal] > 0 {
+			parts = append(parts, fmt.Sprintf("%d personal", counts[commands.SourcePersonal]))
+		}
+		if counts[commands.SourceProject] > 0 {
+			parts = append(parts, fmt.Sprintf("%d project", counts[commands.SourceProject]))
+		}
+		cmdStatus = fmt.Sprintf("%d (%s)", cmdRegistry.Count(), strings.Join(parts, ", "))
+	}
+
+	// Skills count
+	skillRegistry, _ := loadSkillRegistryForInfo(paths, owner, repo, projectRoot)
+	skillStatus := dim("none")
+	if skillRegistry != nil && skillRegistry.Count() > 0 {
+		counts := skillRegistry.CountBySource()
+		var parts []string
+		if counts[skills.SourceTeam] > 0 {
+			parts = append(parts, fmt.Sprintf("%d team", counts[skills.SourceTeam]))
+		}
+		if counts[skills.SourcePersonal] > 0 {
+			parts = append(parts, fmt.Sprintf("%d personal", counts[skills.SourcePersonal]))
+		}
+		if counts[skills.SourceProject] > 0 {
+			parts = append(parts, fmt.Sprintf("%d project", counts[skills.SourceProject]))
+		}
+		skillStatus = fmt.Sprintf("%d (%s)", skillRegistry.Count(), strings.Join(parts, ", "))
+	}
+
 	// Calculate merged token count
 	mergedTokens := calculateMergedTokens(cfg, paths, owner, repo, activeLanguages)
 	tokenStatus := fmt.Sprintf("%d tokens", mergedTokens)
@@ -283,6 +321,8 @@ func showCompactStatus(cfg *config.Config, paths *config.Paths, owner, repo stri
 	fmt.Printf("  %s: %s\n", dim("Personal"), personalStatus)
 	fmt.Printf("  %s: %s\n", dim("Project"), projectStatus)
 	fmt.Printf("  %s: %s\n", dim("Languages"), langStatus)
+	fmt.Printf("  %s: %s\n", dim("Commands"), cmdStatus)
+	fmt.Printf("  %s: %s\n", dim("Skills"), skillStatus)
 	fmt.Printf("  %s: %s\n", dim("Size"), tokenStatus)
 
 	// Suggest optimization if large
@@ -469,4 +509,24 @@ func calculateMergedTokens(cfg *config.Config, paths *config.Paths, owner, repo 
 
 	merged := merge.MergeWithLanguages(layers, mergeOpts)
 	return optimize.CountTokens(merged)
+}
+
+// loadCommandRegistryForInfo loads commands from all sources for info display.
+func loadCommandRegistryForInfo(paths *config.Paths, owner, repo, projectRoot string) (*commands.Registry, error) {
+	teamCommandsDir := paths.TeamCommandsDir(owner, repo)
+	projectCommandsDir := ""
+	if projectRoot != "" {
+		projectCommandsDir = config.ProjectCommandsDir(projectRoot)
+	}
+	return commands.LoadRegistry(teamCommandsDir, paths.PersonalCommands, projectCommandsDir)
+}
+
+// loadSkillRegistryForInfo loads skills from all sources for info display.
+func loadSkillRegistryForInfo(paths *config.Paths, owner, repo, projectRoot string) (*skills.Registry, error) {
+	teamSkillsDir := paths.TeamSkillsDir(owner, repo)
+	projectSkillsDir := ""
+	if projectRoot != "" {
+		projectSkillsDir = config.ProjectSkillsDir(projectRoot)
+	}
+	return skills.LoadRegistry(teamSkillsDir, paths.PersonalSkills, projectSkillsDir)
 }

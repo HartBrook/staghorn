@@ -17,6 +17,7 @@ type Paths struct {
 	PersonalLanguages string // ~/.config/staghorn/languages
 	PersonalEvals     string // ~/.config/staghorn/evals
 	PersonalRules     string // ~/.config/staghorn/rules
+	PersonalSkills    string // ~/.config/staghorn/skills
 }
 
 // NewPaths creates Paths using ~/.config and ~/.cache directories.
@@ -36,6 +37,7 @@ func NewPaths() *Paths {
 		PersonalLanguages: filepath.Join(configDir, "languages"),
 		PersonalEvals:     filepath.Join(configDir, "evals"),
 		PersonalRules:     filepath.Join(configDir, "rules"),
+		PersonalSkills:    filepath.Join(configDir, "skills"),
 	}
 }
 
@@ -50,6 +52,7 @@ func NewPathsWithOverrides(configDir, cacheDir string) *Paths {
 		PersonalLanguages: filepath.Join(configDir, "languages"),
 		PersonalEvals:     filepath.Join(configDir, "evals"),
 		PersonalRules:     filepath.Join(configDir, "rules"),
+		PersonalSkills:    filepath.Join(configDir, "skills"),
 	}
 }
 
@@ -88,6 +91,11 @@ func (p *Paths) TeamRulesDir(owner, repo string) string {
 	return filepath.Join(p.CacheDir, fmt.Sprintf("%s-%s-rules", owner, repo))
 }
 
+// TeamSkillsDir returns the path for cached team skills.
+func (p *Paths) TeamSkillsDir(owner, repo string) string {
+	return filepath.Join(p.CacheDir, fmt.Sprintf("%s-%s-skills", owner, repo))
+}
+
 // OptimizedDir returns the path for optimized config storage.
 func (p *Paths) OptimizedDir() string {
 	return filepath.Join(p.ConfigDir, "optimized")
@@ -121,6 +129,15 @@ func (p *Paths) ClaudeRulesDir() string {
 	return filepath.Join(home, ".claude", "rules")
 }
 
+// ClaudeSkillsDir returns the path for Claude Code user-level skills.
+func (p *Paths) ClaudeSkillsDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		home = os.Getenv("HOME")
+	}
+	return filepath.Join(home, ".claude", "skills")
+}
+
 // ProjectClaudeCommandsDir returns the path for project-level Claude Code commands.
 func ProjectClaudeCommandsDir(projectRoot string) string {
 	return filepath.Join(projectRoot, ".claude", "commands")
@@ -142,6 +159,7 @@ type ProjectPaths struct {
 	LanguagesDir string // .staghorn/languages/
 	EvalsDir     string // .staghorn/evals/
 	RulesDir     string // .staghorn/rules/
+	SkillsDir    string // .staghorn/skills/
 	ConfigFile   string // .staghorn/config.yaml (optional project config)
 }
 
@@ -157,6 +175,7 @@ func NewProjectPaths(projectRoot string) *ProjectPaths {
 		LanguagesDir: filepath.Join(staghornDir, "languages"),
 		EvalsDir:     filepath.Join(staghornDir, "evals"),
 		RulesDir:     filepath.Join(staghornDir, "rules"),
+		SkillsDir:    filepath.Join(staghornDir, "skills"),
 		ConfigFile:   filepath.Join(staghornDir, "config.yaml"),
 	}
 }
@@ -174,4 +193,14 @@ func ProjectRulesDir(projectRoot string) string {
 // ProjectClaudeRulesDir returns the path for project-level Claude Code rules.
 func ProjectClaudeRulesDir(projectRoot string) string {
 	return filepath.Join(projectRoot, ".claude", "rules")
+}
+
+// ProjectSkillsDir returns the path for project-specific skills.
+func ProjectSkillsDir(projectRoot string) string {
+	return filepath.Join(projectRoot, ".staghorn", "skills")
+}
+
+// ProjectClaudeSkillsDir returns the path for project-level Claude Code skills.
+func ProjectClaudeSkillsDir(projectRoot string) string {
+	return filepath.Join(projectRoot, ".claude", "skills")
 }

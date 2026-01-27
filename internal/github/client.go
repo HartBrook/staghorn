@@ -78,7 +78,7 @@ type fileContentsResponse struct {
 }
 
 // FetchFile fetches a file from a repo.
-// If etag is provided and content hasn't changed, returns NotModified=true.
+// The context is used for request cancellation and timeouts.
 func (c *Client) FetchFile(ctx context.Context, owner, repo, path, branch string) (*FetchResult, error) {
 	if owner == "" || repo == "" || path == "" {
 		return nil, fmt.Errorf("owner, repo, and path are required")
@@ -90,7 +90,7 @@ func (c *Client) FetchFile(ctx context.Context, owner, repo, path, branch string
 	}
 
 	var response fileContentsResponse
-	err := c.rest.Get(endpoint, &response)
+	err := c.rest.DoWithContext(ctx, http.MethodGet, endpoint, nil, &response)
 	if err != nil {
 		return nil, err
 	}
@@ -108,6 +108,7 @@ func (c *Client) FetchFile(ctx context.Context, owner, repo, path, branch string
 }
 
 // GetDefaultBranch returns the repo's default branch.
+// The context is used for request cancellation and timeouts.
 func (c *Client) GetDefaultBranch(ctx context.Context, owner, repo string) (string, error) {
 	endpoint := fmt.Sprintf("repos/%s/%s", owner, repo)
 
@@ -115,7 +116,7 @@ func (c *Client) GetDefaultBranch(ctx context.Context, owner, repo string) (stri
 		DefaultBranch string `json:"default_branch"`
 	}
 
-	err := c.rest.Get(endpoint, &response)
+	err := c.rest.DoWithContext(ctx, http.MethodGet, endpoint, nil, &response)
 	if err != nil {
 		return "", err
 	}
@@ -124,6 +125,7 @@ func (c *Client) GetDefaultBranch(ctx context.Context, owner, repo string) (stri
 }
 
 // RepoExists checks if a repository exists and is accessible.
+// The context is used for request cancellation and timeouts.
 func (c *Client) RepoExists(ctx context.Context, owner, repo string) (bool, error) {
 	endpoint := fmt.Sprintf("repos/%s/%s", owner, repo)
 
@@ -131,7 +133,7 @@ func (c *Client) RepoExists(ctx context.Context, owner, repo string) (bool, erro
 		ID int `json:"id"`
 	}
 
-	err := c.rest.Get(endpoint, &response)
+	err := c.rest.DoWithContext(ctx, http.MethodGet, endpoint, nil, &response)
 	if err != nil {
 		// Check if it's a 404
 		if httpErr, ok := err.(*api.HTTPError); ok {
@@ -146,6 +148,7 @@ func (c *Client) RepoExists(ctx context.Context, owner, repo string) (bool, erro
 }
 
 // FileExists checks if a file exists in a repo.
+// The context is used for request cancellation and timeouts.
 func (c *Client) FileExists(ctx context.Context, owner, repo, path, branch string) (bool, error) {
 	endpoint := fmt.Sprintf("repos/%s/%s/contents/%s", owner, repo, url.PathEscape(path))
 	if branch != "" {
@@ -153,7 +156,7 @@ func (c *Client) FileExists(ctx context.Context, owner, repo, path, branch strin
 	}
 
 	var response fileContentsResponse
-	err := c.rest.Get(endpoint, &response)
+	err := c.rest.DoWithContext(ctx, http.MethodGet, endpoint, nil, &response)
 	if err != nil {
 		if httpErr, ok := err.(*api.HTTPError); ok {
 			if httpErr.StatusCode == http.StatusNotFound {
@@ -176,6 +179,7 @@ type DirectoryEntry struct {
 
 // ListDirectory lists contents of a directory in a repo.
 // Returns nil, nil if the directory doesn't exist.
+// The context is used for request cancellation and timeouts.
 func (c *Client) ListDirectory(ctx context.Context, owner, repo, path, branch string) ([]DirectoryEntry, error) {
 	endpoint := fmt.Sprintf("repos/%s/%s/contents/%s", owner, repo, url.PathEscape(path))
 	if branch != "" {
@@ -183,7 +187,7 @@ func (c *Client) ListDirectory(ctx context.Context, owner, repo, path, branch st
 	}
 
 	var response []DirectoryEntry
-	err := c.rest.Get(endpoint, &response)
+	err := c.rest.DoWithContext(ctx, http.MethodGet, endpoint, nil, &response)
 	if err != nil {
 		if httpErr, ok := err.(*api.HTTPError); ok {
 			if httpErr.StatusCode == http.StatusNotFound {
