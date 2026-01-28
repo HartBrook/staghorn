@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-01-27
+
+### Added
+
+- **Path-scoped rules** for contextual Claude Code guidelines (#20)
+  - Rules are markdown files with YAML frontmatter that apply selectively based on file path glob patterns
+  - Teams can define domain-specific guidelines (e.g., REST API standards for `src/api/**`, React patterns for `src/components/**`)
+  - Rules layer across project, personal, and team sources with automatic precedence handling
+  - Rules without `paths:` frontmatter apply to all files
+  - 5 starter rules included: security, testing, error handling, REST APIs, and React
+  - Rules sync to `~/.claude/rules/` via `stag sync`
+  - `stag sync --rules-only` to sync only rules
+
+- **Multi-source configuration** for pulling configs from multiple repositories (#21)
+  - `source.languages`, `source.commands`, and `source.skills` maps in config to specify per-item sources
+  - Items not explicitly configured fall back to `source.default` repository
+  - Enables mixing team standards, community best practices, and specialized configs from different repos
+  - Graceful error handling: explicit sources warn on missing, default sources silently skip
+
+- **Skills feature** implementing the Agent Skills standard with Claude Code extensions (#22)
+  - Skills are parameterized, reusable workflows supporting tool restrictions, subagent execution, pre/post hooks, and model overrides
+  - Each skill is a directory with `SKILL.md` (YAML frontmatter + markdown body) and optional supporting files
+  - Skills accept arguments with defaults, options, and required/optional validation
+  - `stag skills` command to list available skills with optional `--tag` filtering
+  - `stag skills <name>` to show detailed skill info
+  - `stag skills init` to install starter skills (supports `--project` and `--claude` flags)
+  - `stag sync --skills-only` to sync only skills
+  - 3 starter skills: code-review, security-audit, test-gen
+  - Skills sync to `~/.claude/skills/` and are invocable via `/skill-name` in Claude Code
+  - Multi-source support for sourcing skills from different repositories
+
+- **Integration test framework** for end-to-end testing (#16)
+  - Declarative YAML-based test fixtures for sync scenarios
+  - Test harness with fake GitHub client for deterministic testing
+  - Coverage for basic sync, provenance, languages, personal config, rules, multi-source, and skills
+
 ## [0.7.0] - 2026-01-20
 
 ### Added
@@ -162,7 +198,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for team, personal, and project configuration layers
 - Automatic CLAUDE.md generation with layered content
 
-[Unreleased]: https://github.com/HartBrook/staghorn/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/HartBrook/staghorn/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/HartBrook/staghorn/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/HartBrook/staghorn/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/HartBrook/staghorn/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/HartBrook/staghorn/compare/v0.4.0...v0.5.0
