@@ -160,6 +160,9 @@ The layering means you get shared standards _plus_ your personal style. You neve
 | `stag eval list`      | List available evals                              |
 | `stag eval validate`  | Validate eval definitions without running         |
 | `stag eval create`    | Create a new eval from a template                 |
+| `stag skills`         | List available skills                             |
+| `stag skills <name>`  | Show skill details                                |
+| `stag skills init`    | Install starter skills                            |
 | `stag project`        | Manage project-level config                       |
 | `stag team`           | Bootstrap or validate a team standards repo       |
 | `stag version`        | Print version number                              |
@@ -274,6 +277,35 @@ stag project edit                          # Edit
 ```
 
 The source file is `.staghorn/project.md` — both it and `./CLAUDE.md` should be committed.
+
+## Reusable Skills
+
+Skills are parameterized, reusable workflows for Claude Code. Unlike commands (which output a prompt), skills can restrict which tools Claude uses, set a model override, run pre/post hooks, and accept structured arguments with validation. Each skill is a directory with a `SKILL.md` file.
+
+Staghorn includes 3 starter skills:
+
+| Skill            | Description                                  | Allowed Tools          |
+| ---------------- | -------------------------------------------- | ---------------------- |
+| `code-review`    | Thorough code review with structured feedback | Read, Grep, Glob       |
+| `security-audit` | Scan for security vulnerabilities            | Read, Grep, Glob       |
+| `test-gen`       | Generate unit tests for existing code        | Read, Grep, Glob       |
+
+```bash
+# List available skills
+stag skills
+
+# Show skill details
+stag skills code-review
+
+# Install starter skills
+stag skills init                # Install to ~/.claude/skills/
+stag skills init --project      # Install to .staghorn/skills/
+stag skills init --claude       # Install to ~/.claude/skills/ (explicit)
+```
+
+Skills sync to `~/.claude/skills/` and are invocable via `/skill-name` in Claude Code.
+
+Install starter skills to customize them, then commit to your team repo so everyone shares the same workflows.
 
 ## Reusable Commands
 
@@ -425,6 +457,11 @@ your-org/claude-standards/
 ├── evals/              # Behavioral tests (optional)
 │   ├── security-secrets.yaml
 │   └── code-quality.yaml
+├── skills/             # Reusable skills (optional)
+│   ├── code-review/
+│   │   └── SKILL.md
+│   └── security-audit/
+│       └── SKILL.md
 └── templates/          # Project templates (optional)
     └── backend-service.md
 ```
@@ -483,9 +520,11 @@ source:
     go: my-company/go-standards # Team-specific Go config
   commands:
     security-audit: security-team/audits # Commands from another team
+  skills:
+    code-review: security-team/skills # Skills from another team
 ```
 
-This is useful when you want team standards for some things, but community best practices for specific languages.
+This is useful when you want team standards for some things, but community best practices for specific languages or workflows.
 
 ## Language-Specific Config
 
@@ -640,6 +679,48 @@ rules/
 ```
 
 The subdirectory structure is preserved when syncing to `~/.claude/rules/`.
+
+## Creating Skills
+
+A skill is a directory containing a `SKILL.md` file with YAML frontmatter:
+
+```markdown
+---
+name: code-review
+description: Perform a thorough code review with structured feedback
+tags: [review, quality]
+allowed-tools: Read Grep Glob
+args:
+  - name: path
+    description: File or directory to review
+    default: "."
+  - name: focus
+    description: What aspect to focus on
+    default: all
+    options: [all, logic, style, performance, security]
+---
+
+# Code Review
+
+Review the code at `{{path}}` with focus on: **{{focus}}**
+```
+
+Key frontmatter fields:
+
+| Field           | Description                                               |
+| --------------- | --------------------------------------------------------- |
+| `name`          | Skill identifier (used as the slash command name)         |
+| `description`   | Short description shown in `stag skills`                  |
+| `tags`          | Used for filtering with `stag skills --tag`               |
+| `allowed-tools` | Space-separated list of Claude tools this skill may use   |
+| `args`          | Named arguments with defaults, options, and descriptions  |
+| `model`         | Optional model override for this skill                    |
+
+Skills can come from three sources (highest precedence first):
+
+1. **Project** — `.staghorn/skills/`
+2. **Personal** — `~/.config/staghorn/skills/`
+3. **Team/community** — `skills/` in the source repo
 
 ## Creating Commands
 
@@ -835,16 +916,19 @@ languages:
 | `~/.config/staghorn/languages/`  | Personal language configs             |
 | `~/.config/staghorn/rules/`      | Personal rules                        |
 | `~/.config/staghorn/evals/`      | Personal evals                        |
+| `~/.config/staghorn/skills/`     | Personal skills                       |
 | `~/.config/staghorn/optimized/`  | Cached optimization results           |
 | `~/.cache/staghorn/`             | Cached team/community configs         |
 | `~/.claude/CLAUDE.md`            | **Output** — merged global config     |
 | `~/.claude/rules/`               | **Output** — synced rules             |
+| `~/.claude/skills/`              | **Output** — synced skills            |
 | `.staghorn/project.md`           | Project config source (you edit this) |
 | `.staghorn/source.yaml`          | Source repo marker (team repos only)  |
 | `.staghorn/commands/`            | Project-specific commands             |
 | `.staghorn/languages/`           | Project-specific language configs     |
 | `.staghorn/rules/`               | Project-specific rules                |
 | `.staghorn/evals/`               | Project-specific evals                |
+| `.staghorn/skills/`              | Project-specific skills               |
 | `./CLAUDE.md`                    | **Output** — merged project config    |
 
 ### Source Provenance
@@ -898,10 +982,11 @@ stag sync --fetch-only     # Fetch without applying
 stag sync --apply-only     # Apply cached config without fetching
 stag sync --force          # Re-fetch even if cache is fresh
 stag sync --offline        # Use cached config only (no network)
-stag sync --config-only    # Sync config only, skip commands/languages/rules
+stag sync --config-only    # Sync config only, skip commands/languages/rules/skills
 stag sync --commands-only  # Sync commands only
 stag sync --languages-only # Sync language configs only
 stag sync --rules-only     # Sync rules only
+stag sync --skills-only    # Sync skills only
 
 # Search options
 stag search --lang go      # Filter by language
@@ -933,6 +1018,14 @@ stag optimize --target 2000    # Target specific token count
 stag optimize --force          # Re-optimize even if cache is valid
 stag optimize --no-cache       # Skip cache read/write
 stag optimize -o output.md     # Write to custom file
+
+# Skills options
+stag skills                    # List available skills
+stag skills <name>             # Show skill details
+stag skills --tag review       # Filter by tag
+stag skills init               # Install starter skills
+stag skills init --project     # Install to .staghorn/skills/
+stag skills init --claude      # Install to ~/.claude/skills/
 
 # Command options
 stag commands --tag security   # Filter commands by tag
