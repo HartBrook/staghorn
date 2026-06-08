@@ -14,7 +14,7 @@ func TestSkillNames(t *testing.T) {
 	}
 
 	// Check for expected starter skills
-	expected := []string{"code-review", "security-audit", "test-gen"}
+	expected := []string{"code-review", "security-audit", "test-gen", "verify"}
 	for _, exp := range expected {
 		found := false
 		for _, name := range names {

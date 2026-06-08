@@ -283,13 +283,14 @@ The source file is `.staghorn/project.md` — both it and `./CLAUDE.md` should b
 
 Skills are parameterized, reusable workflows for Claude Code. Unlike commands (which output a prompt), skills can restrict which tools Claude uses, set a model override, run pre/post hooks, and accept structured arguments with validation. Each skill is a directory with a `SKILL.md` file.
 
-Staghorn includes 3 starter skills:
+Staghorn includes 4 starter skills:
 
 | Skill            | Description                                  | Allowed Tools          |
 | ---------------- | -------------------------------------------- | ---------------------- |
 | `code-review`    | Thorough code review with structured feedback | Read, Grep, Glob       |
 | `security-audit` | Scan for security vulnerabilities            | Read, Grep, Glob       |
 | `test-gen`       | Generate unit tests for existing code        | Read, Grep, Glob       |
+| `verify`         | Verify a change works by running it, not inspecting it | Read, Grep, Glob, Bash |
 
 ```bash
 # List available skills
