@@ -28,6 +28,9 @@ Checks to run: **{{checks}}**
    - `package.json` scripts (`build`, `test`, `lint`), `Makefile` targets,
      `pyproject.toml` / `tox.ini`, `go.mod` (`go build ./...`, `go test ./...`),
      `Cargo.toml`, CI config (`.github/workflows/*`).
+   - Read the project's docs where build/test steps are written in prose:
+     `README.md`, `CONTRIBUTING.md`, `TESTING.md`, or a `docs/` equivalent.
+     A documented command is authoritative — prefer it over one you infer.
    - Prefer the command the project already uses in CI over an ad-hoc one.
 
 2. **Run the relevant checks** for `{{checks}}`:
