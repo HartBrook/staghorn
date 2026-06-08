@@ -78,7 +78,7 @@ stag eval --layer team
 
 ### Starter Evals
 
-Staghorn includes 25 starter evals you can install as a starting point:
+Staghorn includes 26 starter evals you can install as a starting point:
 
 ```bash
 stag eval init                 # Install to personal evals
@@ -94,6 +94,7 @@ stag eval init --project       # Install to project evals
 | **Git**           | Commit messages, sensitive file handling                                                |
 | **Language**      | Python, Go, TypeScript, Rust best practices                                             |
 | **Baseline**      | Helpfulness, focus, honesty, minimal responses                                          |
+| **Workflow**      | Verification, scope discipline, surfacing tangents, honest reporting                    |
 
 See [Creating Evals](#creating-evals) for writing custom evals, or the [Evals Guide](EVALS_GUIDE.md) for in-depth debugging and best practices.
 

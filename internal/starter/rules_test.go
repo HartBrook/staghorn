@@ -19,6 +19,7 @@ func TestRuleNames(t *testing.T) {
 		"security.md",
 		"testing.md",
 		"error-handling.md",
+		"agentic-workflow.md",
 		"api/rest.md",
 		"frontend/react.md",
 	}
@@ -172,7 +173,7 @@ func TestLoadStarterRules(t *testing.T) {
 	}
 
 	// Check expected rules exist
-	expected := []string{"security.md", "testing.md", "api/rest.md", "frontend/react.md"}
+	expected := []string{"security.md", "testing.md", "agentic-workflow.md", "api/rest.md", "frontend/react.md"}
 	for _, exp := range expected {
 		if !ruleMap[exp] {
 			t.Errorf("missing expected rule: %s", exp)
