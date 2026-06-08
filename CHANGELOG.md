@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`workflow-verification` starter eval** — verifies the config promotes verification, scope discipline, surfacing tangents, and honest reporting (brings starter evals to 26)
 - **`verify` starter skill** — operationalizes "verify before claiming done": discovers the project's own build/test commands, runs them, and reports the actual result honestly instead of asserting success from inspection (brings starter skills to 4)
 
+### Changed
+
+- **Trimmed the bundled `example/team-repo/`** from a near-production config (27 files) down to one minimal file per type, each ~3-8 lines — demonstrates structure and format without duplicating real content. The full worked example now lives in [staghorn-community](https://github.com/HartBrook/staghorn-community), linked from both READMEs
+
 ## [0.8.0] - 2026-01-27
 
 ### Added
