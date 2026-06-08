@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Agentic workflow rule** (`agentic-workflow.md`) — a global starter rule covering how Claude should operate, not just what good code looks like: verify before claiming done, plan large changes, scope discipline, match surrounding code, and confirm irreversible actions
+- **`workflow-verification` starter eval** — verifies the config promotes verification, scope discipline, surfacing tangents, and honest reporting (brings starter evals to 26)
+
 ## [0.8.0] - 2026-01-27
 
 ### Added
