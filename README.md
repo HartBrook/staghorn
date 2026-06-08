@@ -467,7 +467,7 @@ your-org/claude-standards/
     └── backend-service.md
 ```
 
-> **See [`example/team-repo/`](example/team-repo/) for a complete example.**
+> **See [`example/team-repo/`](example/team-repo/) for a minimal example, or [HartBrook/staghorn-community](https://github.com/HartBrook/staghorn-community) for a full production config.**
 
 ### Validating a Repository
 
