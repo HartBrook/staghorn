@@ -425,11 +425,20 @@ your-org/claude-standards/
 ├── evals/              # Behavioral tests (optional)
 │   ├── security-secrets.yaml
 │   └── code-quality.yaml
+├── skills/             # Reusable skills (optional)
+│   ├── code-review/
+│   │   └── SKILL.md
+│   └── security-audit/
+│       └── SKILL.md
 └── templates/          # Project templates (optional)
     └── backend-service.md
 ```
 
-> **See [`example/team-repo/`](example/team-repo/) for a complete example.**
+For a complete, production-quality example see [HartBrook/staghorn-community](https://github.com/HartBrook/staghorn-community) — the official community config source, installable with:
+
+```bash
+stag init --from HartBrook/staghorn-community
+```
 
 ### Validating a Repository
 
