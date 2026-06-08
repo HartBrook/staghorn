@@ -7,10 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-06-08
+
 ### Added
 
 - **Agentic workflow rule** (`agentic-workflow.md`) — a global starter rule covering how Claude should operate, not just what good code looks like: verify before claiming done, plan large changes, scope discipline, match surrounding code, and confirm irreversible actions
 - **`workflow-verification` starter eval** — verifies the config promotes verification, scope discipline, surfacing tangents, and honest reporting (brings starter evals to 26)
+- **`verify` starter skill** — operationalizes "verify before claiming done": discovers the project's own build/test commands, runs them, and reports the actual result honestly instead of asserting success from inspection (brings starter skills to 4)
+
+### Changed
+
+- **Trimmed the bundled `example/team-repo/`** from a near-production config (27 files) down to one minimal file per type, each ~3-8 lines — demonstrates structure and format without duplicating real content. The full worked example now lives in [staghorn-community](https://github.com/HartBrook/staghorn-community), linked from both READMEs
 
 ## [0.8.0] - 2026-01-27
 
@@ -203,7 +210,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for team, personal, and project configuration layers
 - Automatic CLAUDE.md generation with layered content
 
-[Unreleased]: https://github.com/HartBrook/staghorn/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/HartBrook/staghorn/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/HartBrook/staghorn/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/HartBrook/staghorn/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/HartBrook/staghorn/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/HartBrook/staghorn/compare/v0.5.0...v0.6.0
