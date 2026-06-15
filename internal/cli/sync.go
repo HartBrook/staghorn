@@ -33,6 +33,7 @@ type syncOptions struct {
 	fetchOnly     bool
 	applyOnly     bool
 	claudeOnly    bool
+	branch        string
 }
 
 // shouldSyncConfig returns true if base config should be synced.
@@ -106,7 +107,8 @@ This is the main command for keeping your Claude Code config up to date.`,
 		Example: `  staghorn sync
   staghorn sync --force
   staghorn sync --fetch-only
-  staghorn sync --apply-only`,
+  staghorn sync --apply-only
+  staghorn sync --branch my-feature-branch`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSync(cmd.Context(), opts)
 		},
@@ -122,8 +124,18 @@ This is the main command for keeping your Claude Code config up to date.`,
 	cmd.Flags().BoolVar(&opts.rulesOnly, "rules-only", false, "Only sync rules, skip config, commands, and languages")
 	cmd.Flags().BoolVar(&opts.skillsOnly, "skills-only", false, "Only sync skills, skip config, commands, languages, and rules")
 	cmd.Flags().BoolVar(&opts.claudeOnly, "claude-only", false, "Only sync commands, rules, and skills to ~/.claude/, skip config apply")
+	cmd.Flags().StringVar(&opts.branch, "branch", "", "Sync from a specific branch instead of the repo's default branch")
 
 	return cmd
+}
+
+// resolveBranch returns the explicit branch override when set, otherwise the
+// repository's default branch.
+func resolveBranch(ctx context.Context, client *github.Client, owner, repo, override string) (string, error) {
+	if override != "" {
+		return override, nil
+	}
+	return client.GetDefaultBranch(ctx, owner, repo)
 }
 
 func runSync(ctx context.Context, opts *syncOptions) error {
@@ -146,6 +158,12 @@ func runSync(ctx context.Context, opts *syncOptions) error {
 	// We need the GitHub client for multi-source, so check after client creation
 	isMultiSource := cfg.Source.IsMultiSource()
 
+	// A branch override targets a single repo, so it can't apply when config is
+	// pulled from multiple sources.
+	if opts.branch != "" && isMultiSource {
+		return fmt.Errorf("--branch is not supported with multi-source configuration")
+	}
+
 	// Apply-only mode: skip fetch, just apply from cache
 	if opts.applyOnly {
 		if !c.Exists(owner, repo) {
@@ -167,8 +185,10 @@ func runSync(ctx context.Context, opts *syncOptions) error {
 		return errors.CacheNotFound(owner + "/" + repo)
 	}
 
-	// Check if we need to sync
-	if !opts.force && c.Exists(owner, repo) {
+	// Check if we need to sync. An explicit --branch always fetches: the cache is
+	// keyed by owner/repo (not branch), so a fresh default-branch cache must not
+	// short-circuit a request for a different branch.
+	if !opts.force && opts.branch == "" && c.Exists(owner, repo) {
 		meta, err := c.GetMetadata(owner, repo)
 		if err == nil && !meta.IsStale(cfg.Cache.TTLDuration()) {
 			printSuccess("Cache is fresh (%s)", meta.Age())
@@ -197,8 +217,8 @@ func runSync(ctx context.Context, opts *syncOptions) error {
 		return runMultiSourceSync(ctx, cfg, paths, opts, client, c)
 	}
 
-	// Determine branch (use default branch from repo)
-	branch, err := client.GetDefaultBranch(ctx, owner, repo)
+	// Determine branch: explicit --branch override, else the repo's default.
+	branch, err := resolveBranch(ctx, client, owner, repo, opts.branch)
 	if err != nil {
 		return errors.GitHubFetchFailed(owner+"/"+repo, err)
 	}

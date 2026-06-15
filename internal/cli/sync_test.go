@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"sort"
@@ -500,4 +501,13 @@ Use gofmt.`
 
 	// Verify header
 	assert.Contains(t, outputStr, "Managed by staghorn", "output should contain staghorn header")
+}
+
+func TestResolveBranchUsesOverride(t *testing.T) {
+	// When an explicit branch is given, resolveBranch returns it without
+	// contacting GitHub. Passing a nil client proves the default-branch lookup
+	// is bypassed: any call on the nil client would panic.
+	branch, err := resolveBranch(context.Background(), nil, "owner", "repo", "feature-x")
+	require.NoError(t, err)
+	assert.Equal(t, "feature-x", branch)
 }

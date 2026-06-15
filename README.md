@@ -983,6 +983,7 @@ Use `stag info --sources` to generate a config with these annotations visible.
 stag sync --fetch-only     # Fetch without applying
 stag sync --apply-only     # Apply cached config without fetching
 stag sync --force          # Re-fetch even if cache is fresh
+stag sync --branch <name>  # Sync from a specific branch (always fetches)
 stag sync --offline        # Use cached config only (no network)
 stag sync --config-only    # Sync config only, skip commands/languages/rules/skills
 stag sync --commands-only  # Sync commands only
