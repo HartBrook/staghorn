@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`stag sync --branch <name>`** — sync the config from a specific branch instead of the repository's default branch. Useful for testing standards changes on a branch before merging. An explicit branch always fetches (bypassing the cache-freshness check, since the cache is keyed by repo, not branch) and is rejected for multi-source configurations.
+
 ## [0.9.0] - 2026-06-08
 
 ### Added
